@@ -1,194 +1,499 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Header } from './components/Header';
-import { ArchitectureTracker } from './components/ArchitectureTracker';
-import { InventoryManager } from './components/InventoryManager';
-import { OrderForm } from './components/OrderForm';
-import { OrderList } from './components/OrderList';
+import { ShoppingCart, CheckCircle2, XCircle, Database, Layers, ArrowRightLeft, Radio, RefreshCw, Send, AlertTriangle } from 'lucide-react';
 import { api } from './services/api';
-import { Product, Order, IntegrationTrace } from './types';
+import { InventoryItem, OrderResponse, NetworkEvidence } from './types';
 
 export const App: React.FC = () => {
-  const [products, setProducts] = useState<Product[]>([]);
-  const [orders, setOrders] = useState<Order[]>([]);
-  const [traces, setTraces] = useState<IntegrationTrace[]>([]);
-  const [backendConnected, setBackendConnected] = useState<boolean>(false);
+  const [inventory, setInventory] = useState<InventoryItem[]>([]);
+  const [selectedProductId, setSelectedProductId] = useState<string>('P100');
+  const [quantity, setQuantity] = useState<number>(2);
   const [loading, setLoading] = useState<boolean>(false);
-  const [submittingOrder, setSubmittingOrder] = useState<boolean>(false);
+  const [submitting, setSubmitting] = useState<boolean>(false);
+  const [backendOnline, setBackendOnline] = useState<boolean>(false);
 
-  const addTrace = useCallback((trace: Omit<IntegrationTrace, 'id' | 'timestamp'>) => {
-    const newTrace: IntegrationTrace = {
-      ...trace,
-      id: Math.random().toString(36).substring(2, 9),
-      timestamp: new Date().toISOString(),
-    };
-    setTraces((prev) => [newTrace, ...prev.slice(0, 49)]);
-  }, []);
+  // Result state
+  const [orderResult, setOrderResult] = useState<OrderResponse | null>(null);
 
-  const loadData = useCallback(async () => {
+  // Network Evidence History
+  const [networkLog, setNetworkLog] = useState<NetworkEvidence[]>([]);
+  const [selectedEvidence, setSelectedEvidence] = useState<NetworkEvidence | null>(null);
+
+  const loadInventory = useCallback(async () => {
     try {
       setLoading(true);
-      const isHealthy = await api.checkHealth();
-      setBackendConnected(isHealthy);
-
-      if (isHealthy) {
-        const [invData, orderData] = await Promise.all([
-          api.getInventory(),
-          api.getOrders(),
-        ]);
-        setProducts(invData);
-        setOrders(orderData);
+      const isOnline = await api.checkHealth();
+      setBackendOnline(isOnline);
+      if (isOnline) {
+        const items = await api.getInventory();
+        setInventory(items);
+        if (items.length > 0 && !items.some(i => i.productId === selectedProductId)) {
+          setSelectedProductId(items[0].productId);
+        }
       }
     } catch (err) {
-      setBackendConnected(false);
-      console.error('Error connecting to backend:', err);
+      setBackendOnline(false);
+      console.error('Failed to load inventory:', err);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [selectedProductId]);
 
   useEffect(() => {
-    loadData();
-    const interval = setInterval(loadData, 10000); // 10s auto-refresh
-    return () => clearInterval(interval);
-  }, [loadData]);
+    loadInventory();
+  }, [loadInventory]);
 
-  // Handle Order Placement
-  const handleOrderSubmit = async (email: string, sku: string, quantity: number) => {
-    setSubmittingOrder(true);
-    const startRest = performance.now();
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedProductId || quantity <= 0) return;
 
+    setSubmitting(true);
     try {
-      // 1. External Client -> Spring Boot REST
-      const order = await api.createOrder(email, [{ sku, quantity }]);
-      const restDuration = (performance.now() - startRest).toFixed(1);
-
-      addTrace({
-        type: 'CLIENT_TO_SERVICE',
-        title: `POST /api/orders (${sku} x${quantity})`,
-        description: `External React client dispatched HTTP request to Spring Boot OrderController. Received HTTP 201 CREATED.`,
-        durationMs: `${restDuration}ms HTTP`,
-        status: 'success',
+      const { response, evidence } = await api.placeOrder({
+        productId: selectedProductId,
+        quantity,
       });
 
-      // 2. In-Process Boundary Integration
-      addTrace({
-        type: 'MODULE_TO_MODULE',
-        title: `OrderService ➔ InventoryModuleApi.checkAndReserveStock()`,
-        description: `In-process Java method call across module boundary. Stock deducted in-memory with zero network overhead.`,
-        durationMs: '< 0.1ms In-Process',
-        status: 'success',
-      });
+      setOrderResult(response);
+      setNetworkLog((prev) => [evidence, ...prev]);
+      setSelectedEvidence(evidence);
 
-      // 3. Service to Supabase Database Integration
-      addTrace({
-        type: 'SERVICE_TO_DATABASE',
-        title: `Supabase Postgres: ACID Txn Committed (Order #${order.id})`,
-        description: `Single database transaction: 'orders', 'order_items', and 'inventory_stocks' updated atomically.`,
-        durationMs: 'ACID Committed',
-        status: 'success',
-      });
-
-      // Refresh data
-      await loadData();
-    } catch (error: any) {
-      const restDuration = (performance.now() - startRest).toFixed(1);
-
-      addTrace({
-        type: 'CLIENT_TO_SERVICE',
-        title: `POST /api/orders Failed: ${error.message}`,
-        description: `Backend returned error response. Stock availability check or validation triggered clean rollback.`,
-        durationMs: `${restDuration}ms`,
-        status: 'error',
-      });
-
-      throw error;
+      // Refresh inventory stock
+      await loadInventory();
+    } catch (err: any) {
+      console.error('Order error:', err);
     } finally {
-      setSubmittingOrder(false);
+      setSubmitting(false);
     }
   };
 
-  // Handle Restock
-  const handleRestock = async (sku: string, amount: number) => {
-    const startRest = performance.now();
-    try {
-      await api.restock(sku, amount);
-      const restDuration = (performance.now() - startRest).toFixed(1);
-
-      addTrace({
-        type: 'CLIENT_TO_SERVICE',
-        title: `POST /api/inventory/restock (${sku} +${amount})`,
-        description: `Restock request completed successfully via InventoryController REST API.`,
-        durationMs: `${restDuration}ms HTTP`,
-        status: 'success',
-      });
-
-      addTrace({
-        type: 'SERVICE_TO_DATABASE',
-        title: `Supabase Postgres: inventory_stocks updated for ${sku}`,
-        description: `Pessimistic row lock acquired; availableQuantity increased by ${amount}.`,
-        durationMs: 'Row Updated',
-        status: 'success',
-      });
-
-      await loadData();
-    } catch (error: any) {
-      addTrace({
-        type: 'CLIENT_TO_SERVICE',
-        title: `Restock failed: ${error.message}`,
-        description: 'Failed to update inventory in database.',
-        durationMs: 'Error',
-        status: 'error',
-      });
-      throw error;
-    }
-  };
+  const selectedItem = inventory.find((i) => i.productId === selectedProductId);
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans antialiased">
-      <Header
-        backendConnected={backendConnected}
-        onRefresh={loadData}
-        loading={loading}
-      />
-
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
-        {/* Architecture Inspector & Live Call Traces */}
-        <ArchitectureTracker
-          traces={traces}
-          onClearTraces={() => setTraces([])}
-        />
-
-        {/* Dashboard Grid: Left side Forms/Inventory, Right side Order History */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-          {/* Order Placement Form */}
-          <div className="lg:col-span-5 space-y-8">
-            <OrderForm
-              products={products}
-              onSubmitOrder={handleOrderSubmit}
-              submitting={submittingOrder}
-            />
-
-            <OrderList
-              orders={orders}
-              loading={loading}
-            />
+    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans">
+      {/* Top Navigation Bar */}
+      <header className="bg-slate-900/90 border-b border-slate-800 sticky top-0 z-40 backdrop-blur">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3.5 flex flex-wrap items-center justify-between gap-4">
+          <div className="flex items-center space-x-3">
+            <div className="p-2 bg-indigo-600 text-white rounded-xl shadow-md shadow-indigo-600/30">
+              <Layers className="w-5 h-5" />
+            </div>
+            <div>
+              <h1 className="text-base font-bold text-white flex items-center gap-2">
+                In-Process Monolith: Order &amp; Inventory
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 font-mono">
+                  edu.cit.rabanal
+                </span>
+              </h1>
+              <p className="text-xs text-slate-400">
+                Package-Private Boundary &bull; Supabase Postgres &bull; REST Client
+              </p>
+            </div>
           </div>
 
-          {/* Real-time Inventory Catalog */}
-          <div className="lg:col-span-7">
-            <InventoryManager
-              products={products}
-              onRestock={handleRestock}
-              loading={loading}
-            />
+          <div className="flex items-center gap-3">
+            <div className={`flex items-center gap-2 px-3 py-1 rounded-full border text-xs font-medium ${
+              backendOnline
+                ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
+                : 'bg-rose-500/10 border-rose-500/30 text-rose-400'
+            }`}>
+              <Radio className={`w-3 h-3 ${backendOnline ? 'animate-pulse' : ''}`} />
+              <span>{backendOnline ? 'Spring Boot (:8080) Online' : 'Backend Offline'}</span>
+            </div>
+
+            <button
+              onClick={loadInventory}
+              disabled={loading}
+              className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 transition"
+              title="Refresh Inventory"
+            >
+              <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+            </button>
+          </div>
+        </div>
+      </header>
+
+      {/* Main Content Area */}
+      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
+        {/* Architecture Banner */}
+        <div className="bg-gradient-to-r from-slate-900 via-indigo-950/40 to-slate-900 border border-slate-800 rounded-2xl p-5 shadow-lg flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="space-y-1">
+            <div className="flex items-center gap-2 text-xs font-semibold text-indigo-400 uppercase tracking-wider">
+              <ArrowRightLeft className="w-4 h-4" />
+              <span>In-Process Boundary Enforced Integration</span>
+            </div>
+            <p className="text-sm text-slate-300">
+              <code className="text-indigo-300 font-mono">OrderService</code> calls package-private <code className="text-indigo-300 font-mono">InventoryServiceImpl</code> via the <code className="text-indigo-300 font-mono">InventoryService</code> interface in-memory.
+            </p>
+          </div>
+          <div className="flex items-center gap-3 text-xs text-slate-400">
+            <span className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-800/80 rounded-lg border border-slate-700 font-mono text-emerald-300">
+              <Database className="w-3.5 h-3.5 text-emerald-400" />
+              inventory (P100, P200, P300)
+            </span>
+            <span className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-800/80 rounded-lg border border-slate-700 font-mono text-indigo-300">
+              orders (order_id, status, reason)
+            </span>
+          </div>
+        </div>
+
+        {/* 2-Column Grid: Left Order Form & Result, Right Network Tab Evidence */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+          {/* Left Column: Order Form & Result */}
+          <div className="lg:col-span-5 space-y-6">
+            {/* Order Form Card */}
+            <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-5">
+              <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+                <h2 className="text-base font-bold text-white flex items-center gap-2">
+                  <ShoppingCart className="w-4 h-4 text-indigo-400" />
+                  Place Order Form
+                </h2>
+                <span className="text-[11px] font-mono text-slate-400">POST /api/orders</span>
+              </div>
+
+              <form onSubmit={handleSubmit} className="space-y-4">
+                {/* Product Dropdown */}
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1.5">
+                    Product Selection
+                  </label>
+                  <select
+                    value={selectedProductId}
+                    onChange={(e) => setSelectedProductId(e.target.value)}
+                    className="w-full px-3.5 py-2.5 bg-slate-800 border border-slate-700 rounded-xl text-sm text-white focus:outline-none focus:border-indigo-500 font-medium"
+                    required
+                  >
+                    {inventory.map((item) => (
+                      <option key={item.productId} value={item.productId}>
+                        {item.productId} &mdash; {item.name} ({item.stock} in stock)
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Quantity Input */}
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="text-xs font-semibold text-slate-300">
+                      Order Quantity
+                    </label>
+                    {selectedItem && (
+                      <span className={`text-xs font-mono font-bold ${
+                        selectedItem.stock === 0
+                          ? 'text-rose-400'
+                          : selectedItem.stock < 5
+                          ? 'text-amber-400'
+                          : 'text-emerald-400'
+                      }`}>
+                        Stock: {selectedItem.stock}
+                      </span>
+                    )}
+                  </div>
+                  <input
+                    type="number"
+                    min="1"
+                    max="999"
+                    value={quantity}
+                    onChange={(e) => setQuantity(Math.max(1, parseInt(e.target.value) || 1))}
+                    className="w-full px-3.5 py-2 bg-slate-800 border border-slate-700 rounded-xl text-sm text-white focus:outline-none focus:border-indigo-500 font-mono"
+                    required
+                  />
+                  <div className="flex gap-2 mt-2">
+                    {[1, 2, 5, 10, 15].map((qty) => (
+                      <button
+                        key={qty}
+                        type="button"
+                        onClick={() => setQuantity(qty)}
+                        className={`px-2.5 py-1 text-xs rounded-lg border transition font-mono ${
+                          quantity === qty
+                            ? 'bg-indigo-600 border-indigo-500 text-white'
+                            : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-slate-200'
+                        }`}
+                      >
+                        {qty}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Quick Testing Preset Buttons */}
+                <div className="pt-2 border-t border-slate-800 space-y-1.5">
+                  <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 block">
+                    Quick Scenario Presets:
+                  </span>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => { setSelectedProductId('P100'); setQuantity(2); }}
+                      className="px-2.5 py-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 rounded-lg text-xs text-emerald-300 text-left transition"
+                    >
+                      <strong className="block">Confirmed Path</strong>
+                      <span className="text-[10px] text-emerald-400/80">P100 (qty 2) &rarr; Success</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setSelectedProductId('P300'); setQuantity(1); }}
+                      className="px-2.5 py-1.5 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 rounded-lg text-xs text-rose-300 text-left transition"
+                    >
+                      <strong className="block">Rejected Path</strong>
+                      <span className="text-[10px] text-rose-400/80">P300 (qty 1) &rarr; Stock 0</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Submit Action */}
+                <button
+                  type="submit"
+                  disabled={submitting || !backendOnline}
+                  className="w-full py-3 px-4 bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700 text-white font-bold rounded-xl text-sm transition shadow-lg shadow-indigo-600/20 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {submitting ? (
+                    <span>Processing In-Process Call...</span>
+                  ) : (
+                    <>
+                      <Send className="w-4 h-4" />
+                      <span>Submit Order ({quantity}x {selectedProductId})</span>
+                    </>
+                  )}
+                </button>
+              </form>
+            </div>
+
+            {/* Prominent Result Area */}
+            <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4">
+              <h2 className="text-base font-bold text-white border-b border-slate-800 pb-3">
+                Order Execution Result
+              </h2>
+
+              {!orderResult ? (
+                <div className="py-8 text-center text-slate-500 text-xs border border-dashed border-slate-800 rounded-xl">
+                  No orders placed yet in this session. Submit the form above to see the live response status.
+                </div>
+              ) : (
+                <div className={`p-4 rounded-xl border space-y-3 ${
+                  orderResult.status === 'CONFIRMED'
+                    ? 'bg-emerald-500/10 border-emerald-500/40 text-emerald-200'
+                    : 'bg-rose-500/10 border-rose-500/40 text-rose-200'
+                }`}>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      {orderResult.status === 'CONFIRMED' ? (
+                        <CheckCircle2 className="w-6 h-6 text-emerald-400" />
+                      ) : (
+                        <XCircle className="w-6 h-6 text-rose-400" />
+                      )}
+                      <div>
+                        <span className="text-xs uppercase tracking-wider font-bold block text-slate-400">
+                          Transaction Status
+                        </span>
+                        <span className={`text-lg font-black tracking-wide ${
+                          orderResult.status === 'CONFIRMED' ? 'text-emerald-400' : 'text-rose-400'
+                        }`}>
+                          {orderResult.status}
+                        </span>
+                      </div>
+                    </div>
+
+                    <span className="px-2.5 py-1 rounded bg-slate-900/80 font-mono text-xs border border-slate-800 text-slate-300">
+                      HTTP {orderResult.status === 'CONFIRMED' ? '200 OK' : '409 CONFLICT'}
+                    </span>
+                  </div>
+
+                  {orderResult.reason && (
+                    <div className="pt-2 border-t border-rose-500/20 text-xs flex items-start gap-2">
+                      <AlertTriangle className="w-4 h-4 text-rose-400 flex-shrink-0 mt-0.5" />
+                      <div>
+                        <strong className="block text-rose-300">Rejection Reason:</strong>
+                        <span className="text-rose-200">{orderResult.reason}</span>
+                      </div>
+                    </div>
+                  )}
+
+                  {orderResult.inventory && (
+                    <div className="pt-2 border-t border-slate-800/60 text-xs space-y-1">
+                      <div className="text-slate-400 font-semibold">Updated Inventory State:</div>
+                      <div className="flex items-center justify-between bg-slate-900/60 p-2.5 rounded-lg font-mono">
+                        <span>{orderResult.inventory.productId} &bull; {orderResult.inventory.name}</span>
+                        <strong className="text-white">Stock: {orderResult.inventory.stock}</strong>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Right Column: Network Tab Evidence & In-Process Inspector */}
+          <div className="lg:col-span-7 space-y-6">
+            <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-5">
+              <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+                <div>
+                  <h2 className="text-base font-bold text-white flex items-center gap-2">
+                    <Radio className="w-4 h-4 text-emerald-400" />
+                    Network Tab Evidence &amp; Call Inspector
+                  </h2>
+                  <p className="text-xs text-slate-400">
+                    Captures full HTTP request, response headers, status codes, and in-process execution metadata.
+                  </p>
+                </div>
+                {networkLog.length > 0 && (
+                  <span className="text-xs px-2.5 py-0.5 rounded-full bg-slate-800 border border-slate-700 text-slate-300 font-mono">
+                    {networkLog.length} captured
+                  </span>
+                )}
+              </div>
+
+              {/* Network History List */}
+              {networkLog.length === 0 ? (
+                <div className="p-8 text-center text-slate-500 text-xs border border-dashed border-slate-800 rounded-xl">
+                  No network traffic captured yet. Submit an order to generate live Network tab evidence.
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {/* Requests Table */}
+                  <div className="border border-slate-800 rounded-xl overflow-hidden">
+                    <table className="w-full text-left text-xs font-mono">
+                      <thead className="bg-slate-800/80 text-slate-400 uppercase text-[10px] tracking-wider border-b border-slate-800">
+                        <tr>
+                          <th className="py-2 px-3">Method</th>
+                          <th className="py-2 px-3">Status</th>
+                          <th className="py-2 px-3">URL</th>
+                          <th className="py-2 px-3">Duration</th>
+                          <th className="py-2 px-3 text-right">Action</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-800/60 bg-slate-950/60">
+                        {networkLog.map((ev) => (
+                          <tr
+                            key={ev.id}
+                            onClick={() => setSelectedEvidence(ev)}
+                            className={`cursor-pointer hover:bg-slate-800/40 transition ${
+                              selectedEvidence?.id === ev.id ? 'bg-indigo-950/40 border-l-2 border-indigo-500' : ''
+                            }`}
+                          >
+                            <td className="py-2.5 px-3 font-bold text-indigo-400">{ev.method}</td>
+                            <td className="py-2.5 px-3">
+                              <span className={`px-2 py-0.5 rounded text-[11px] font-bold ${
+                                ev.statusCode === 200
+                                  ? 'bg-emerald-500/20 text-emerald-400'
+                                  : 'bg-rose-500/20 text-rose-400'
+                              }`}>
+                                {ev.statusCode} {ev.statusCode === 200 ? 'OK' : 'CONFLICT'}
+                              </span>
+                            </td>
+                            <td className="py-2.5 px-3 text-slate-300 truncate max-w-[140px]">{ev.url}</td>
+                            <td className="py-2.5 px-3 text-slate-400">{ev.durationMs}ms</td>
+                            <td className="py-2.5 px-3 text-right">
+                              <button
+                                onClick={(e) => { e.stopPropagation(); setSelectedEvidence(ev); }}
+                                className="text-[11px] text-indigo-400 hover:text-indigo-300 underline"
+                              >
+                                View Evidence
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* Selected Evidence Detail Box */}
+                  {selectedEvidence && (
+                    <div className="bg-slate-950 border border-slate-800 rounded-xl p-4 space-y-3 animate-in fade-in">
+                      <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+                        <span className="text-xs font-bold text-slate-200">
+                          Captured Network Request #{selectedEvidence.id}
+                        </span>
+                        <span className="text-[10px] text-slate-400 font-mono">
+                          {new Date(selectedEvidence.timestamp).toLocaleTimeString()}
+                        </span>
+                      </div>
+
+                      {/* General HTTP Info */}
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs font-mono">
+                        <div className="bg-slate-900 p-2 rounded border border-slate-800">
+                          <span className="text-[10px] text-slate-500 block uppercase">Request Method</span>
+                          <span className="text-indigo-400 font-bold">{selectedEvidence.method}</span>
+                        </div>
+                        <div className="bg-slate-900 p-2 rounded border border-slate-800">
+                          <span className="text-[10px] text-slate-500 block uppercase">Status Code</span>
+                          <span className={`font-bold ${
+                            selectedEvidence.statusCode === 200 ? 'text-emerald-400' : 'text-rose-400'
+                          }`}>
+                            {selectedEvidence.statusCode}
+                          </span>
+                        </div>
+                        <div className="bg-slate-900 p-2 rounded border border-slate-800">
+                          <span className="text-[10px] text-slate-500 block uppercase">Response Time</span>
+                          <span className="text-amber-400 font-bold">{selectedEvidence.durationMs} ms</span>
+                        </div>
+                        <div className="bg-slate-900 p-2 rounded border border-slate-800">
+                          <span className="text-[10px] text-slate-500 block uppercase">In-Process Hop</span>
+                          <span className="text-violet-400 font-bold">&lt; 0.1 ms</span>
+                        </div>
+                      </div>
+
+                      {/* Request Payload */}
+                      <div>
+                        <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block mb-1">
+                          Request Payload (JSON)
+                        </span>
+                        <pre className="bg-slate-900 p-2.5 rounded-lg border border-slate-800 text-[11px] font-mono text-emerald-300 overflow-x-auto">
+                          {JSON.stringify(selectedEvidence.requestBody, null, 2)}
+                        </pre>
+                      </div>
+
+                      {/* Response Body */}
+                      <div>
+                        <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block mb-1">
+                          Response Payload (JSON)
+                        </span>
+                        <pre className={`p-2.5 rounded-lg border text-[11px] font-mono overflow-x-auto ${
+                          selectedEvidence.statusCode === 200
+                            ? 'bg-slate-900 border-slate-800 text-emerald-300'
+                            : 'bg-rose-950/20 border-rose-900/40 text-rose-300'
+                        }`}>
+                          {JSON.stringify(selectedEvidence.responseBody, null, 2)}
+                        </pre>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Current Inventory Snapshot Card */}
+            <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4">
+              <h2 className="text-base font-bold text-white flex items-center gap-2 border-b border-slate-800 pb-3">
+                <Database className="w-4 h-4 text-emerald-400" />
+                Live Supabase Database: `inventory` Table
+              </h2>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                {inventory.map((item) => (
+                  <div
+                    key={item.productId}
+                    className="bg-slate-950 border border-slate-800 rounded-xl p-3.5 space-y-1 hover:border-slate-700 transition"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-mono font-bold text-indigo-400">{item.productId}</span>
+                      <span className={`text-xs font-mono font-bold px-2 py-0.5 rounded ${
+                        item.stock === 0
+                          ? 'bg-rose-500/20 text-rose-400'
+                          : 'bg-emerald-500/20 text-emerald-400'
+                      }`}>
+                        {item.stock} left
+                      </span>
+                    </div>
+                    <div className="text-sm font-semibold text-white truncate">{item.name}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
         </div>
       </main>
 
-      <footer className="border-t border-slate-800 bg-slate-900/60 py-6 text-center text-xs text-slate-500">
-        <p>
-          Modular Monolith Architecture Demo &bull; In-Process Boundary &bull; Supabase Postgres &bull; Spring Boot + React
-        </p>
+      <footer className="border-t border-slate-800 bg-slate-900 py-4 text-center text-xs text-slate-500">
+        In-Process Monolith &bull; edu.cit.rabanal.shop &amp; edu.cit.rabanal.inventory &bull; Supabase Postgres &bull; React
       </footer>
     </div>
   );

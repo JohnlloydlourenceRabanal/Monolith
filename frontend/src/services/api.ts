@@ -1,59 +1,48 @@
-import { ApiResponse, Order, Product } from '../types';
+import { InventoryItem, OrderRequest, OrderResponse, NetworkEvidence } from '../types';
 
 const API_BASE = 'http://localhost:8080/api';
 
-async function request<T>(endpoint: string, options?: RequestInit): Promise<T> {
-  const res = await fetch(`${API_BASE}${endpoint}`, {
-    headers: {
-      'Content-Type': 'application/json',
-      ...options?.headers,
-    },
-    ...options,
-  });
-
-  const json: ApiResponse<T> = await res.json().catch(() => ({
-    success: false,
-    message: `HTTP ${res.status}: ${res.statusText}`,
-    data: null as any,
-    timestamp: new Date().toISOString(),
-  }));
-
-  if (!res.ok || !json.success) {
-    throw new Error(json.message || `Request failed with status ${res.status}`);
-  }
-
-  return json.data;
-}
-
 export const api = {
-  // Inventory
-  async getInventory(): Promise<Product[]> {
-    return request<Product[]>('/inventory');
+  async getInventory(): Promise<InventoryItem[]> {
+    const res = await fetch(`${API_BASE}/inventory`);
+    if (!res.ok) {
+      throw new Error(`Failed to load inventory: ${res.status}`);
+    }
+    return res.json();
   },
 
-  async restock(sku: string, amount: number): Promise<Product> {
-    return request<Product>('/inventory/restock', {
+  async placeOrder(request: OrderRequest): Promise<{ response: OrderResponse; evidence: NetworkEvidence }> {
+    const start = performance.now();
+    const url = `${API_BASE}/orders`;
+    const headers = { 'Content-Type': 'application/json' };
+
+    const res = await fetch(url, {
       method: 'POST',
-      body: JSON.stringify({ sku, amount }),
+      headers,
+      body: JSON.stringify(request),
     });
-  },
 
-  // Orders
-  async getOrders(): Promise<Order[]> {
-    return request<Order[]>('/orders');
-  },
+    const durationMs = Math.round(performance.now() - start);
+    const data: OrderResponse = await res.json();
 
-  async createOrder(customerEmail: string, items: { sku: string; quantity: number }[]): Promise<Order> {
-    return request<Order>('/orders', {
+    const evidence: NetworkEvidence = {
+      id: Math.random().toString(36).substring(2, 9),
+      timestamp: new Date().toISOString(),
       method: 'POST',
-      body: JSON.stringify({ customerEmail, items }),
-    });
+      url,
+      statusCode: res.status,
+      requestHeaders: headers,
+      requestBody: request,
+      responseBody: data,
+      durationMs,
+    };
+
+    return { response: data, evidence };
   },
 
-  // Health check
   async checkHealth(): Promise<boolean> {
     try {
-      const res = await fetch(`${API_BASE}/inventory`, { method: 'GET' });
+      const res = await fetch(`${API_BASE}/inventory`);
       return res.ok;
     } catch {
       return false;

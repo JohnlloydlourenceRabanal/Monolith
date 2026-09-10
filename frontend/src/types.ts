@@ -1,46 +1,28 @@
-export interface Product {
-  id: number;
-  sku: string;
+export interface InventoryItem {
+  productId: string;
   name: string;
-  description: string;
-  price: number;
-  availableQuantity: number;
-  reservedQuantity: number;
+  stock: number;
 }
 
-export interface OrderItem {
-  id: number;
-  sku: string;
+export interface OrderRequest {
+  productId: string;
   quantity: number;
-  unitPrice: number;
-  subtotal: number;
 }
 
-export interface Order {
-  id: number;
-  customerEmail: string;
-  status: 'PENDING' | 'CONFIRMED' | 'FAILED' | 'CANCELLED';
-  totalAmount: number;
-  items: OrderItem[];
-  createdAt: string;
-  updatedAt: string;
-  integrationStyleSummary?: string;
+export interface OrderResponse {
+  status: 'CONFIRMED' | 'REJECTED';
+  reason: string | null;
+  inventory: InventoryItem | null;
 }
 
-export interface ApiResponse<T> {
-  success: boolean;
-  message: string;
-  data: T;
-  timestamp: string;
-}
-
-export interface IntegrationTrace {
+export interface NetworkEvidence {
   id: string;
   timestamp: string;
-  type: 'CLIENT_TO_SERVICE' | 'MODULE_TO_MODULE' | 'SERVICE_TO_DATABASE';
-  title: string;
-  description: string;
-  durationMs: number | string;
-  status: 'success' | 'warning' | 'error';
-  payload?: any;
+  method: string;
+  url: string;
+  statusCode: number;
+  requestHeaders: Record<string, string>;
+  requestBody: any;
+  responseBody: any;
+  durationMs: number;
 }
