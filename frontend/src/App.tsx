@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { ShoppingCart, CheckCircle2, XCircle, Database, Layers, ArrowRightLeft, Radio, RefreshCw, Send, AlertTriangle } from 'lucide-react';
 import { api } from './services/api';
-import { InventoryItem, OrderResponse, NetworkEvidence } from './types';
+import { InventoryItem, OrderResponse } from './types';
 
 export const App: React.FC = () => {
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
@@ -13,10 +13,6 @@ export const App: React.FC = () => {
 
   // Result state
   const [orderResult, setOrderResult] = useState<OrderResponse | null>(null);
-
-  // Network Evidence History
-  const [networkLog, setNetworkLog] = useState<NetworkEvidence[]>([]);
-  const [selectedEvidence, setSelectedEvidence] = useState<NetworkEvidence | null>(null);
 
   const loadInventory = useCallback(async () => {
     try {
@@ -48,14 +44,12 @@ export const App: React.FC = () => {
 
     setSubmitting(true);
     try {
-      const { response, evidence } = await api.placeOrder({
+      const { response } = await api.placeOrder({
         productId: selectedProductId,
         quantity,
       });
 
       setOrderResult(response);
-      setNetworkLog((prev) => [evidence, ...prev]);
-      setSelectedEvidence(evidence);
 
       // Refresh inventory stock
       await loadInventory();
@@ -136,11 +130,10 @@ export const App: React.FC = () => {
           </div>
         </div>
 
-        {/* 2-Column Grid: Left Order Form & Result, Right Network Tab Evidence */}
+        {/* 2-Column Clean Layout: Left Order Form, Right Order Result & Inventory */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-          {/* Left Column: Order Form & Result */}
-          <div className="lg:col-span-5 space-y-6">
-            {/* Order Form Card */}
+          {/* Left Column: Order Form */}
+          <div className="lg:col-span-6 space-y-6">
             <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-5">
               <div className="flex items-center justify-between border-b border-slate-800 pb-3">
                 <h2 className="text-base font-bold text-white flex items-center gap-2">
@@ -257,7 +250,10 @@ export const App: React.FC = () => {
                 </button>
               </form>
             </div>
+          </div>
 
+          {/* Right Column: Order Execution Result & Live Database Inventory Table */}
+          <div className="lg:col-span-6 space-y-6">
             {/* Prominent Result Area */}
             <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4">
               <h2 className="text-base font-bold text-white border-b border-slate-800 pb-3">
@@ -266,7 +262,7 @@ export const App: React.FC = () => {
 
               {!orderResult ? (
                 <div className="py-8 text-center text-slate-500 text-xs border border-dashed border-slate-800 rounded-xl">
-                  No orders placed yet in this session. Submit the form above to see the live response status.
+                  No orders placed yet in this session. Submit the form to see the live response status.
                 </div>
               ) : (
                 <div className={`p-4 rounded-xl border space-y-3 ${
@@ -314,122 +310,6 @@ export const App: React.FC = () => {
                       <div className="flex items-center justify-between bg-slate-900/60 p-2.5 rounded-lg font-mono">
                         <span>{orderResult.inventory.productId} &bull; {orderResult.inventory.name}</span>
                         <strong className="text-white">Stock: {orderResult.inventory.stock}</strong>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Right Column: Network Tab Evidence & In-Process Inspector */}
-          <div className="lg:col-span-7 space-y-6">
-            <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-5">
-              <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-                <div>
-                  <h2 className="text-base font-bold text-white flex items-center gap-2">
-                    <Radio className="w-4 h-4 text-emerald-400" />
-                    Network Tab Evidence &amp; Call Inspector
-                  </h2>
-                  <p className="text-xs text-slate-400">
-                    Captures full HTTP request, response headers, status codes, and in-process execution metadata.
-                  </p>
-                </div>
-                {networkLog.length > 0 && (
-                  <span className="text-xs px-2.5 py-0.5 rounded-full bg-slate-800 border border-slate-700 text-slate-300 font-mono">
-                    {networkLog.length} captured
-                  </span>
-                )}
-              </div>
-
-              {/* Network History List */}
-              {networkLog.length === 0 ? (
-                <div className="p-8 text-center text-slate-500 text-xs border border-dashed border-slate-800 rounded-xl">
-                  No network traffic captured yet. Submit an order to generate live Network tab evidence.
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  {/* Requests Table */}
-                  <div className="border border-slate-800 rounded-xl overflow-hidden">
-                    <table className="w-full text-left text-xs font-mono">
-                      <thead className="bg-slate-800/80 text-slate-400 uppercase text-[10px] tracking-wider border-b border-slate-800">
-                        <tr>
-                          <th className="py-2 px-3">Method</th>
-                          <th className="py-2 px-3">Status</th>
-                          <th className="py-2 px-3">URL</th>
-                          <th className="py-2 px-3">Duration</th>
-                          <th className="py-2 px-3 text-right">Action</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-800/60 bg-slate-950/60">
-                        {networkLog.map((ev) => (
-                          <tr
-                            key={ev.id}
-                            onClick={() => setSelectedEvidence(ev)}
-                            className={`cursor-pointer hover:bg-slate-800/40 transition ${
-                              selectedEvidence?.id === ev.id ? 'bg-indigo-950/40 border-l-2 border-indigo-500' : ''
-                            }`}
-                          >
-                            <td className="py-2.5 px-3 font-bold text-indigo-400">{ev.method}</td>
-                            <td className="py-2.5 px-3">
-                              <span className={`px-2 py-0.5 rounded text-[11px] font-bold ${
-                                ev.statusCode === 200
-                                  ? 'bg-emerald-500/20 text-emerald-400'
-                                  : 'bg-rose-500/20 text-rose-400'
-                              }`}>
-                                {ev.statusCode} {ev.statusCode === 200 ? 'OK' : 'CONFLICT'}
-                              </span>
-                            </td>
-                            <td className="py-2.5 px-3 text-slate-300 truncate max-w-[140px]">{ev.url}</td>
-                            <td className="py-2.5 px-3 text-slate-400">{ev.durationMs}ms</td>
-                            <td className="py-2.5 px-3 text-right">
-                              <button
-                                onClick={(e) => { e.stopPropagation(); setSelectedEvidence(ev); }}
-                                className="text-[11px] text-indigo-400 hover:text-indigo-300 underline"
-                              >
-                                View Evidence
-                              </button>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-
-                  {/* Selected Evidence Detail Box */}
-                  {selectedEvidence && (
-                    <div className="bg-slate-950 border border-slate-800 rounded-xl p-4 space-y-3 animate-in fade-in">
-                      <div className="flex items-center justify-between border-b border-slate-800 pb-2">
-                        <span className="text-xs font-bold text-slate-200">
-                          Captured Network Request #{selectedEvidence.id}
-                        </span>
-                        <span className="text-[10px] text-slate-400 font-mono">
-                          {new Date(selectedEvidence.timestamp).toLocaleTimeString()}
-                        </span>
-                      </div>
-
-                      {/* General HTTP Info */}
-                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs font-mono">
-                        <div className="bg-slate-900 p-2 rounded border border-slate-800">
-                          <span className="text-[10px] text-slate-500 block uppercase">Request Method</span>
-                          <span className="text-indigo-400 font-bold">{selectedEvidence.method}</span>
-                        </div>
-                        <div className="bg-slate-900 p-2 rounded border border-slate-800">
-                          <span className="text-[10px] text-slate-500 block uppercase">Status Code</span>
-                          <span className={`font-bold ${
-                            selectedEvidence.statusCode === 200 ? 'text-emerald-400' : 'text-rose-400'
-                          }`}>
-                            {selectedEvidence.statusCode}
-                          </span>
-                        </div>
-                        <div className="bg-slate-900 p-2 rounded border border-slate-800">
-                          <span className="text-[10px] text-slate-500 block uppercase">Response Time</span>
-                          <span className="text-amber-400 font-bold">{selectedEvidence.durationMs} ms</span>
-                        </div>
-                        <div className="bg-slate-900 p-2 rounded border border-slate-800">
-                          <span className="text-[10px] text-slate-500 block uppercase">In-Process Hop</span>
-                          <span className="text-violet-400 font-bold">&lt; 0.1 ms</span>
-                        </div>
                       </div>
                     </div>
                   )}
