@@ -431,30 +431,6 @@ export const App: React.FC = () => {
                           <span className="text-violet-400 font-bold">&lt; 0.1 ms</span>
                         </div>
                       </div>
-
-                      {/* Request Payload */}
-                      <div>
-                        <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block mb-1">
-                          Request Payload (JSON)
-                        </span>
-                        <pre className="bg-slate-900 p-2.5 rounded-lg border border-slate-800 text-[11px] font-mono text-emerald-300 overflow-x-auto">
-                          {JSON.stringify(selectedEvidence.requestBody, null, 2)}
-                        </pre>
-                      </div>
-
-                      {/* Response Body */}
-                      <div>
-                        <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block mb-1">
-                          Response Payload (JSON)
-                        </span>
-                        <pre className={`p-2.5 rounded-lg border text-[11px] font-mono overflow-x-auto ${
-                          selectedEvidence.statusCode === 200
-                            ? 'bg-slate-900 border-slate-800 text-emerald-300'
-                            : 'bg-rose-950/20 border-rose-900/40 text-rose-300'
-                        }`}>
-                          {JSON.stringify(selectedEvidence.responseBody, null, 2)}
-                        </pre>
-                      </div>
                     </div>
                   )}
                 </div>
