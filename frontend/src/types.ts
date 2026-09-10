@@ -15,14 +15,11 @@ export interface OrderResponse {
   inventory: InventoryItem | null;
 }
 
-export interface NetworkEvidence {
-  id: string;
-  timestamp: string;
-  method: string;
-  url: string;
-  statusCode: number;
-  requestHeaders: Record<string, string>;
-  requestBody: any;
-  responseBody: any;
-  durationMs: number;
+export interface OrderRecord {
+  orderId: number;
+  productId: string;
+  quantity: number;
+  status: 'CONFIRMED' | 'REJECTED';
+  reason: string | null;
+  createdAt: string;
 }

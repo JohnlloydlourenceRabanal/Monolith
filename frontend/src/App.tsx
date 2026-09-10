@@ -1,33 +1,39 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { ShoppingBag, CheckCircle2, AlertCircle, Package, ArrowRight } from 'lucide-react';
+import { ShoppingBag, CheckCircle2, AlertCircle, Package, ArrowRight, History, Clock } from 'lucide-react';
 import { api } from './services/api';
-import { InventoryItem, OrderResponse } from './types';
+import { InventoryItem, OrderResponse, OrderRecord } from './types';
 
 export const App: React.FC = () => {
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
+  const [orders, setOrders] = useState<OrderRecord[]>([]);
   const [selectedProductId, setSelectedProductId] = useState<string>('P100');
   const [quantity, setQuantity] = useState<number>(1);
   const [submitting, setSubmitting] = useState<boolean>(false);
   const [restocking, setRestocking] = useState<boolean>(false);
 
-  // Result state
+  // Result state for most recent action
   const [orderResult, setOrderResult] = useState<OrderResponse | null>(null);
 
-  const loadInventory = useCallback(async () => {
+  const loadData = useCallback(async () => {
     try {
-      const items = await api.getInventory();
+      const [items, orderList] = await Promise.all([
+        api.getInventory(),
+        api.getOrders(),
+      ]);
       setInventory(items);
+      setOrders(orderList);
+
       if (items.length > 0 && !items.some((i) => i.productId === selectedProductId)) {
         setSelectedProductId(items[0].productId);
       }
     } catch (err) {
-      console.error('Failed to load inventory:', err);
+      console.error('Failed to load data:', err);
     }
   }, [selectedProductId]);
 
   useEffect(() => {
-    loadInventory();
-  }, [loadInventory]);
+    loadData();
+  }, [loadData]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -35,13 +41,13 @@ export const App: React.FC = () => {
 
     setSubmitting(true);
     try {
-      const { response } = await api.placeOrder({
+      const response = await api.placeOrder({
         productId: selectedProductId,
         quantity,
       });
 
       setOrderResult(response);
-      await loadInventory();
+      await loadData();
     } catch (err: any) {
       console.error('Order error:', err);
     } finally {
@@ -87,8 +93,8 @@ export const App: React.FC = () => {
       {/* Main Container */}
       <main className="flex-1 max-w-5xl w-full mx-auto px-4 sm:px-6 py-10 space-y-8">
         <div className="grid grid-cols-1 md:grid-cols-12 gap-8">
-          {/* Order Placement Form */}
-          <div className="md:col-span-6">
+          {/* Left Column: Place Order Form */}
+          <div className="md:col-span-6 space-y-6">
             <div className="bg-white border border-slate-200/80 rounded-2xl p-6 shadow-sm space-y-6">
               <div>
                 <h2 className="text-lg font-semibold text-slate-900 tracking-tight">
@@ -167,7 +173,7 @@ export const App: React.FC = () => {
             </div>
           </div>
 
-          {/* Right Column: Execution Result & Stock List */}
+          {/* Right Column: Latest Result & Current Stock */}
           <div className="md:col-span-6 space-y-6">
             {/* Order Result Card */}
             <div className="bg-white border border-slate-200/80 rounded-2xl p-6 shadow-sm space-y-4">
@@ -176,7 +182,7 @@ export const App: React.FC = () => {
               </h2>
 
               {!orderResult ? (
-                <div className="py-10 text-center text-slate-400 text-sm border border-dashed border-slate-200 rounded-xl bg-slate-50/50">
+                <div className="py-8 text-center text-slate-400 text-sm border border-dashed border-slate-200 rounded-xl bg-slate-50/50">
                   Submit an order to view the status result here.
                 </div>
               ) : (
@@ -265,6 +271,67 @@ export const App: React.FC = () => {
               </div>
             </div>
           </div>
+        </div>
+
+        {/* Order History Section */}
+        <div className="bg-white border border-slate-200/80 rounded-2xl p-6 shadow-sm space-y-4">
+          <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+            <div className="flex items-center gap-2">
+              <History className="w-4 h-4 text-indigo-600" />
+              <h2 className="text-base font-semibold text-slate-900 tracking-tight">
+                Order History
+              </h2>
+            </div>
+            <span className="text-xs font-mono text-slate-500 bg-slate-100 px-2.5 py-0.5 rounded-full">
+              {orders.length} {orders.length === 1 ? 'record' : 'records'}
+            </span>
+          </div>
+
+          {orders.length === 0 ? (
+            <div className="py-8 text-center text-slate-400 text-sm">
+              No orders placed yet.
+            </div>
+          ) : (
+            <div className="divide-y divide-slate-100">
+              {orders.map((order) => (
+                <div
+                  key={order.orderId}
+                  className="py-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-sm hover:bg-slate-50/60 px-2 rounded-lg transition"
+                >
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2.5">
+                      <span className="font-mono text-xs font-semibold text-slate-500 bg-slate-100 px-2 py-0.5 rounded">
+                        #{order.orderId}
+                      </span>
+                      <span className="font-medium text-slate-900">
+                        {order.quantity}x {order.productId}
+                      </span>
+                      <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
+                        order.status === 'CONFIRMED'
+                          ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                          : 'bg-rose-100 text-rose-700 border border-rose-200'
+                      }`}>
+                        {order.status}
+                      </span>
+                    </div>
+
+                    {order.reason && (
+                      <p className="text-xs text-rose-600 pl-1">
+                        Reason: {order.reason}
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="flex items-center gap-1.5 text-xs text-slate-400 self-end sm:self-center font-mono">
+                    <Clock className="w-3.5 h-3.5 text-slate-400" />
+                    <span>
+                      {new Date(order.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </main>
     </div>
