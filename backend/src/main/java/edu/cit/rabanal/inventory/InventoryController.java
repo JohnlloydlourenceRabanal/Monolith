@@ -21,4 +21,10 @@ public class InventoryController {
     public ResponseEntity<List<InventoryItem>> getInventory() {
         return ResponseEntity.ok(inventoryService.getAllItems());
     }
+
+    @org.springframework.web.bind.annotation.PostMapping("/restock-all")
+    public ResponseEntity<List<InventoryItem>> restockAll() {
+        inventoryService.restockAll();
+        return ResponseEntity.ok(inventoryService.getAllItems());
+    }
 }

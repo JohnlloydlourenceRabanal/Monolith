@@ -48,4 +48,12 @@ export const api = {
       return false;
     }
   },
+
+  async restockAll(): Promise<InventoryItem[]> {
+    const res = await fetch(`${API_BASE}/inventory/restock-all`, { method: 'POST' });
+    if (!res.ok) {
+      throw new Error(`Failed to restock inventory: ${res.status}`);
+    }
+    return res.json();
+  },
 };

@@ -69,4 +69,15 @@ class InventoryServiceImpl implements InventoryService {
     public List<InventoryItem> getAllItems() {
         return inventoryRepository.findAll();
     }
+
+    @Override
+    @Transactional
+    public void restockAll() {
+        List<InventoryItem> items = inventoryRepository.findAll();
+        for (InventoryItem item : items) {
+            item.setStock(25); // Set all products to full stock (25 units)
+        }
+        inventoryRepository.saveAll(items);
+        log.info("[Restock All] All products have been restocked to 25 units.");
+    }
 }
