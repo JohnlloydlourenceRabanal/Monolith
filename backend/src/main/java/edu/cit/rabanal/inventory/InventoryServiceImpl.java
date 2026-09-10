@@ -75,9 +75,15 @@ class InventoryServiceImpl implements InventoryService {
     public void restockAll() {
         List<InventoryItem> items = inventoryRepository.findAll();
         for (InventoryItem item : items) {
-            item.setStock(25); // Set all products to full stock (25 units)
+            if ("P100".equals(item.getProductId())) {
+                item.setStock(25); // Wireless Mouse
+            } else if ("P200".equals(item.getProductId())) {
+                item.setStock(10); // Mechanical Keyboard
+            } else if ("P300".equals(item.getProductId())) {
+                item.setStock(0);  // USB-C Hub
+            }
         }
         inventoryRepository.saveAll(items);
-        log.info("[Restock All] All products have been restocked to 25 units.");
+        log.info("[Restock All] Stocks reset: P100 (Mouse)=25, P200 (Keyboard)=10, P300 (USB)=0");
     }
 }
