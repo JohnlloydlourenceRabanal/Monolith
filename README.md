@@ -206,34 +206,11 @@ The following captures the exact HTTP transactions observed in the browser devel
 
 ## 📝 300–500 Word Reflection
 
-### 1. In-Process Integration vs. Network Microservices
-Integrating the `Order` and `Inventory` modules in-process within a modular monolith executes interactions via direct JVM method calls across shared memory. This provides several critical capabilities "for free":
-- **Zero-Latency Invocations**: Cross-module method calls run in nanoseconds without serialization or network transmission overhead.
-- **Atomic ACID Transactions**: Both the stock reservation and order creation execute inside a single `@Transactional` database session. If inventory is insufficient, rollback is instantaneous, automatic, and consistent.
-- **Strong Compile-Time Guarantees**: Java compiler and ArchUnit enforce boundary type safety, interface contracts, and nullability without schema drift.
+Integrating the Order and Inventory modules in-process within a modular monolith allows interactions to execute via direct JVM method calls across shared memory. This architecture provides critical capabilities out of the box, notably zero-latency invocations that run in nanoseconds without serialization overhead, and atomic ACID transactions where stock reservation and order creation execute inside a single @Transactional database session. If stock is insufficient, rollback is instantaneous, automatic, and guaranteed. Furthermore, the Java compiler and tools like ArchUnit enforce boundary type safety, interface contracts, and nullability without schema drift. Splitting these domains into network microservices forces developers to re-engineer these guarantees from scratch. Systems require network resilience patterns like retries, timeouts, and circuit breakers via tools such as Resilience4j. Because single-database ACID transactions disappear, teams must manage eventual consistency and compensating transactions through the Saga pattern, message brokers like Kafka or RabbitMQ, and the transactional outbox pattern, all while taking on the operational burden of distributed tracing, service discovery, and separate deployment pipelines.
 
-If split into separate network microservices, we must add back:
-- **Network Resilience**: REST/gRPC clients with retry policies, timeouts, rate limiters, and circuit breakers (e.g., Resilience4j).
-- **Distributed Consistency (Saga Pattern)**: We lose single-transaction ACID guarantees and must implement compensating transactions, dual-phase commits, or eventual consistency using message brokers (Kafka/RabbitMQ) and outbox patterns.
-- **Operational Overhead**: Distributed tracing (OpenTelemetry), service discovery, API gateways, independent CI/CD pipelines, and schema versioning.
+Package-private visibility on InventoryServiceImpl serves as an essential architectural guardrail within this modular design. By omitting the public modifier, direct access is strictly confined to classes residing within edu.cit.rabanal.inventory. Consequently, OrderService in the edu.cit.rabanal.shop package can only reference the public InventoryService interface, leaving Spring to wire the implementation via dependency injection. If InventoryServiceImpl were made public, developers could inadvertently instantiate the concrete class directly or inject the implementation rather than the interface, degrading architectural boundaries. This exposure leads to leaky abstractions where internal helper methods and implementation details couple tightly to consumers. Keeping the implementation package-private ensures build-time ArchUnit tests pass while making unauthorized cross-module coupling physically impossible at compile time.
 
-### 2. Significance of Package-Private Visibility on `InventoryServiceImpl`
-In Java, package-private visibility (default access modifier without `public`) restricts direct class access strictly to classes within `edu.cit.rabanal.inventory`. `OrderService` in `edu.cit.rabanal.shop` can only reference the public `InventoryService` interface, with Spring wiring the implementation via dependency injection.
-
-If `InventoryServiceImpl` were `public`:
-- **Boundary Erosion**: Developers could inadvertently instantiate `InventoryServiceImpl` directly using `new` or inject the concrete implementation instead of the abstraction, bypassing the designed architectural boundary.
-- **Leaky Abstraction**: Internal helper methods or domain details could leak to consumers, creating tight coupling.
-- **Architectural Regression**: Our build-time ArchUnit test (`BoundaryTest.java`) would immediately fail because it asserts `Modifier.isPublic(modifiers) == false` and prohibits `shop` from referencing `InventoryServiceImpl`. Keeping it package-private makes unauthorized cross-module coupling impossible at compile time.
-
-### 3. Extraction Criteria & Code Refactoring Requirements
-Inventory should be extracted into an independent microservice when:
-- **Disproportionate Scaling**: High-frequency inventory stock queries (e.g., flash sales or warehouse scanning) require independent horizontal autoscaling without scaling the heavier order lifecycle services.
-- **Organizational Isolation**: A distinct, dedicated logistics team takes complete ownership of inventory lifecycle, database storage, and deployment cadence.
-
-To extract Inventory into its own microservice:
-1. **Code Extraction**: Move `edu.cit.rabanal.inventory` into an independent Spring Boot repository with its own database credentials.
-2. **Client Abstraction**: Replace the in-process `InventoryService` dependency in `OrderService` with a declarative REST/HTTP client (e.g., Spring Cloud OpenFeign or `RestClient`) or gRPC stub targeting the Inventory service URL.
-3. **Transaction Replacement**: Remove monolithic `@Transactional` rollback and replace it with an asynchronous Saga orchestrator or choreographed events (`OrderPlacedEvent` ➔ `InventoryReservedEvent` / `InventoryReservationFailedEvent` ➔ compensation order cancellation).
+Extracting Inventory into a standalone microservice becomes justified only when specific operational thresholds are crossed, such as disproportionate scaling demands or organizational shifts. For example, if high-frequency stock checks during flash sales require dedicated horizontal scaling without scaling the heavier order lifecycle services, or if an independent logistics team assumes sole ownership of the domain, physical separation makes sense. Executing this extraction requires moving the inventory package into a dedicated Spring Boot repository with its own database credentials, replacing the local InventoryService dependency in OrderService with an HTTP client or gRPC stub, and refactoring monolithic @Transactional boundaries into an asynchronous Saga pattern driven by choreographed events and compensating transactions.
 
 ---
 
