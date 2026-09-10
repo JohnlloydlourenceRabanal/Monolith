@@ -133,6 +133,8 @@ Follow these steps to connect the application to your Supabase PostgreSQL instan
 The following captures the exact HTTP transactions observed in the browser developer tools (Network tab) when placing confirmed and rejected orders.
 
 ### 1. Confirmed Order (Sufficient Stock)
+<img width="1919" height="1003" alt="image" src="https://github.com/user-attachments/assets/34299757-5e41-47df-9a3d-418a72f5c037" />
+
 - **Action**: Purchasing 2 units of `P100` (Wireless Mouse, initial stock: 25).
 - **Request URL**: `POST http://localhost:8080/api/orders`
 - **Request Headers**:
@@ -167,6 +169,8 @@ The following captures the exact HTTP transactions observed in the browser devel
 ---
 
 ### 2. Rejected Order (Insufficient Stock)
+<img width="1919" height="991" alt="image" src="https://github.com/user-attachments/assets/f47e3273-db2c-4be5-a5c7-ecb90242a212" />
+
 - **Action**: Attempting to purchase 1 unit of `P300` (USB-C Hub, initial stock: 0).
 - **Request URL**: `POST http://localhost:8080/api/orders`
 - **Request Headers**:
