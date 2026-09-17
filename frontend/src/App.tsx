@@ -181,11 +181,9 @@ export const App: React.FC = () => {
             </div>
             <div>
               <h1 className="text-base font-semibold text-slate-900 tracking-tight">
-                Order &amp; Inventory Modular Monolith
+                Rabanal's Computer parts and Services
               </h1>
-              <p className="text-xs text-slate-500">
-                Multi-Item Rollback &bull; In-Monolith Events &bull; Auto-Reorder Alerts
-              </p>
+              
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -212,7 +210,7 @@ export const App: React.FC = () => {
               <div>
                 <h2 className="text-lg font-semibold text-slate-900 tracking-tight flex items-center gap-2">
                   <ShoppingBag className="w-5 h-5 text-indigo-600" />
-                  <span>Build Multi-Item Order</span>
+                  <span>Order</span>
                 </h2>
                 <p className="text-xs text-slate-500 mt-1">
                   Add items to your cart. All items are validated atomically before reserving stock.
@@ -431,7 +429,7 @@ export const App: React.FC = () => {
                 <div className="flex items-center gap-2">
                   <History className="w-4 h-4 text-indigo-600" />
                   <h2 className="text-base font-semibold text-slate-900 tracking-tight">
-                    Order History &amp; Actions
+                    Order History
                   </h2>
                 </div>
                 <span className="text-xs font-mono text-slate-500 bg-slate-100 px-2.5 py-0.5 rounded-full">
@@ -519,7 +517,7 @@ export const App: React.FC = () => {
                 <div className="flex items-center gap-2">
                   <Package className="w-4 h-4 text-indigo-600" />
                   <h2 className="text-base font-semibold text-slate-900 tracking-tight">
-                    Live Inventory
+                    Inventory
                   </h2>
                 </div>
                 <span className="text-[11px] font-mono text-slate-400">
@@ -589,7 +587,7 @@ export const App: React.FC = () => {
                 <div className="flex items-center gap-2">
                   <Bell className="w-4 h-4 text-indigo-600" />
                   <h2 className="text-base font-semibold text-slate-900 tracking-tight">
-                    Domain Activity Feed
+                    Domain Activity
                   </h2>
                 </div>
                 <span className="text-xs font-mono text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">

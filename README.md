@@ -1,6 +1,6 @@
 # In-Process Modular Monolith: Order, Inventory & Notification System (Lab 2)
 
-A robust, enterprise-grade **In-Process Modular Monolith** built with **Java Spring Boot**, backed by **Supabase PostgreSQL**, and controlled via a clean, modern **React (Vite + TypeScript + Tailwind CSS)** frontend.
+A production-ready **In-Process Modular Monolith** implementing multi-item transactional checkout, order cancellation with automated restock, and in-monolith domain events. Built with **Java Spring Boot (Java 26 / 21)**, backed by **Supabase PostgreSQL (Cloud)**, and paired with a modern, responsive **React (Vite + TypeScript + Tailwind CSS)** frontend.
 
 - **GitHub Repository**: [https://github.com/JohnlloydlourenceRabanal/Monolith](https://github.com/JohnlloydlourenceRabanal/Monolith)
 - **Base Package**: `edu.cit.rabanal`
@@ -12,7 +12,7 @@ A robust, enterprise-grade **In-Process Modular Monolith** built with **Java Spr
 
 ## 🏛️ Architecture & Integration Styles
 
-This architecture unifies in-process module boundaries, shared database ACID transactions, external REST APIs, and in-monolith event-driven publish/subscribe:
+This project demonstrates four distinct software integration styles operating in a single deployable:
 
 ```
 +---------------------------------------------------------------------------------------------------------+
@@ -20,7 +20,7 @@ This architecture unifies in-process module boundaries, shared database ACID tra
 |                Cart Builder | Live Inventory | Order History & Cancel | Activity Feed                  |
 +---------------------------------------------------------------------------------------------------------+
                                                      |
-                         HTTP REST (CORS enabled for http://localhost:5173)
+                         Style 1: External REST over HTTP (CORS enabled)
                                                      v
 +---------------------------------------------------------------------------------------------------------+
 |                              Spring Boot Modular Monolith (Single JVM)                                  |
@@ -46,10 +46,10 @@ This architecture unifies in-process module boundaries, shared database ACID tra
 |            |                      |                                  |                                  |
 |            v                      |                                  v                                  |
 |   +-------------------------------------------------------------------------------------+               |
-|   |                             Spring ApplicationEventPublisher                        |               |
+|   |                       Spring ApplicationEventPublisher (In-Memory)                  |               |
 |   +-------------------------------------------------------------------------------------+               |
 |                                            |                                                            |
-|                                            v In-Monolith Synchronous Decoupled Pub-Sub                  |
+|                                            v Style 4: In-Monolith Decoupled Pub-Sub                     |
 |                           +-------------------------------------+                                       |
 |                           |     edu.cit.rabanal.notification    |                                       |
 |                           |        (Notification Module)        |                                       |
@@ -61,7 +61,7 @@ This architecture unifies in-process module boundaries, shared database ACID tra
 |                           |  - NotificationRepository           |                                       |
 |                           +-------------------------------------+                                       |
 |                                            |                                                            |
-|                                            v Single Shared PostgreSQL Connection                        |
+|                                            v Style 2: Shared ACID Database Connection                   |
 +---------------------------------------------------------------------------------------------------------+
                                              |
                                Supabase PostgreSQL Database
@@ -70,56 +70,53 @@ This architecture unifies in-process module boundaries, shared database ACID tra
 
 ---
 
-## ⚡ Key Capabilities Added in Lab 2
+## ⚡ Core Features Added in Lab 2
 
-1. **Multi-Item Orders with All-or-Nothing Rollback**:
+1. **Multi-Item Orders (Transactional Rollback)**:
    - `POST /api/orders` accepts `{ items: [{ productId, quantity }, ...] }`.
-   - **Pre-Reservation Validation**: Before modifying any stock, `OrderService` queries `InventoryService` to validate available quantity for every line item.
-   - If any single item fails (e.g. requested > stock or zero stock), the **entire order is rejected immediately with zero items reserved**.
-   - Only after 100% of line items pass validation are stock reservations executed.
-2. **Order Cancellation & Automatic Restock**:
-   - `POST /api/orders/{orderId}/cancel` transitions a `CONFIRMED` order to `CANCELLED`.
-   - Automatically iterates over the order's line items and calls `InventoryService.restock(productId, quantity)` to return reserved quantities back to available stock.
+   - **Pre-Reservation Validation**: Validates every single item against current stock before calling `reserve()`. If any item exceeds stock, the **entire order is rejected** and **no items are reserved** (zero partial reservations).
+   - Only when 100% of line items pass validation are stock reservations executed.
+2. **Order Cancellation & Restock**:
+   - `POST /api/orders/{orderId}/cancel` transitions order status to `CANCELLED` and returns all reserved line items back to available stock.
    - Rejects non-existent orders with `404 Not Found` and already-cancelled or rejected orders with `409 Conflict`.
+   - Adds package-private `restock(productId, quantity)` to `InventoryService`.
 3. **In-Monolith Domain Events (Notification Module)**:
-   - `OrderService` publishes `OrderPlacedEvent`, `OrderRejectedEvent`, and `OrderCancelledEvent` via Spring's `ApplicationEventPublisher`.
-   - `NotificationEventListener` in `edu.cit.rabanal.notification` listens to these events with `@EventListener` and persists audit records to the `notifications` table.
-   - **Architectural Boundary Enforcement**: `Notification` depends exclusively on event DTOs. It never imports or calls `OrderService`, `InventoryService`, or external module repositories (enforced at build-time via ArchUnit).
+   - Publishes `OrderPlacedEvent`, `OrderRejectedEvent`, and `OrderCancelledEvent` via Spring's `ApplicationEventPublisher`.
+   - `NotificationEventListener` captures events with `@EventListener` and records them into `notifications`.
+   - `Notification` depends exclusively on event DTOs (verified by ArchUnit build tests).
 4. **Low-Stock Auto-Reorder Rule**:
-   - Whenever `InventoryService.reserve()` executes and remaining stock drops below the threshold (threshold: `< 5`), a `LowStockEvent` is published.
-   - The Notification module captures this event and writes a distinct `LOW-STOCK ALERT: Reorder needed!` entry.
-   - The frontend automatically highlights items below threshold with an amber warning badge.
+   - When stock drops below 5 (`< 5`) during `reserve()`, `LowStockEvent` is published.
+   - Notification module logs this as a distinct `"LOW-STOCK ALERT: Reorder needed!"` entry.
 5. **Interactive Frontend Dashboard**:
-   - Built with React, TypeScript, and Tailwind CSS in **light mode**.
-   - Includes a **Cart Builder** (add multiple items, view line items, submit single transaction), **Live Inventory Table**, **Order History with Cancel Button**, and a real-time **Notification Activity Feed**.
+   - Light-mode React dashboard with a **Cart Builder** (inline `+` / `-` quantity adjust controls), **Live Inventory Table** with low-stock badges, **Order History with Cancel buttons**, and real-time **Activity Feed**.
 
 ---
 
 ## 🔄 Synchronous vs. Asynchronous Domain Events
 
-In this monolith, domain events are handled **synchronously** using Spring's core `@EventListener`.
+In this monolith, domain events are executed **synchronously** using Spring's core `@EventListener`.
 
 ### Why Synchronous was Chosen:
-1. **Transactional Consistency & Immediate Visibility**: Handling events synchronously on the same execution thread guarantees that the notification record is written and committed in the database before the HTTP response returns to the client. When the client subsequently calls `GET /api/notifications` or re-fetches dashboard data, the new event is immediately present without eventual consistency lags.
-2. **Determinism in Automated Testing**: Unit and integration tests (`OrderServiceIntegrationTest.java`) execute deterministically without needing `Thread.sleep()`, polling loops, or awaitility constructs to wait for background thread pools.
-3. **Simplicity & Reliability**: Since the event listener performs a lightweight database insert, synchronous execution adds negligible latency (< 2 ms) while avoiding the operational complexity of thread pool sizing, task rejection policies, and unhandled async exception losses.
+1. **Transactional Coherence & Immediate Consistency**: Executing synchronously on the calling thread ensures notification records are persisted and committed before the HTTP response returns to the client. Subsequent calls to `GET /api/notifications` immediately reflect new activity without eventual consistency lags.
+2. **Deterministic Automated Testing**: Integration tests run reliably without requiring polling loops or `Thread.sleep()`.
+3. **Operational Simplicity**: Lightweight inserts introduce negligible latency (< 2 ms) while avoiding the overhead of thread-pool tuning and unhandled async exception loss.
 
 ### When to Make Event Listeners `@Async`:
-`@Async` (enabled via `@EnableAsync` and a dedicated `ThreadPoolTaskExecutor`) should be adopted when:
-- The listener performs **high-latency, I/O-intensive operations**, such as sending external emails (SMTP), dispatching SMS/push notifications via third-party APIs (Twilio, Firebase), or syncing data to an external ERP.
-- Decoupling execution time prevents client requests from stalling.
-- **Trade-offs**: Requires implementing the **Transactional Outbox Pattern** or Dead Letter Queues (DLQ) to ensure message durability if the worker thread crashes.
+`@Async` (via `@EnableAsync` and a `ThreadPoolTaskExecutor`) is recommended when:
+- Handlers perform high-latency I/O (sending SMTP emails, third-party SMS/webhook calls, or external ERP synchronization).
+- Decoupling preserves fast HTTP response times.
+- **Trade-offs**: Requires implementing the **Transactional Outbox Pattern** or Dead Letter Queues (DLQ) to ensure message durability if an async task fails.
 
 ---
 
 ## 🗄️ Supabase PostgreSQL Setup Steps
 
-To set up or refresh your Supabase database schema for Lab 2:
+To set up or recreate your Supabase database schema for Lab 2:
 
-### Step 1: Execute Updated Schema in Supabase SQL Editor
+### Step 1: Run SQL Schema in Supabase SQL Editor
 1. Log in to your [Supabase Dashboard](https://supabase.com).
 2. Open the **SQL Editor** tab.
-3. Copy and run [`supabase_schema.sql`](./supabase_schema.sql):
+3. Paste and run the contents of [`supabase_schema.sql`](./supabase_schema.sql):
    ```sql
    -- Clean slate: drop tables in reverse dependency order
    DROP TABLE IF EXISTS notifications CASCADE;
@@ -163,25 +160,26 @@ To set up or refresh your Supabase database schema for Lab 2:
        ('P200', 'Mechanical Keyboard', 10),
        ('P300', 'USB-C Hub', 0);
    ```
-4. Click **Run**. Supabase will report `Success. No rows returned`.
-5. Open the **Table Editor** to confirm all 4 tables (`inventory`, `orders`, `order_items`, `notifications`) are active.
+4. Click **Run**. Output will report `Success. No rows returned`.
+5. Check **Table Editor** to confirm all 4 tables (`inventory`, `orders`, `order_items`, `notifications`) are active.
 
 ### Step 2: Configure Environment Variables
 Set your environment variables before running the backend:
 ```powershell
 $env:SPRING_PROFILES_ACTIVE = "supabase"
-$env:SUPABASE_DB_URL = "jdbc:postgresql://aws-0-ap-south-1.pooler.supabase.com:6543/postgres?sslmode=require"
+$env:SUPABASE_DB_URL = "jdbc:postgresql://aws-0-ap-south-1.pooler.supabase.com:6543/postgres?sslmode=require&prepareThreshold=0"
 $env:SUPABASE_DB_USER = "postgres.jjxfvolifvrctwkdivnk"
-$env:SUPABASE_DB_PASSWORD = "<YOUR_DB_PASSWORD>"
+$env:SUPABASE_DB_PASSWORD = "<YOUR_SUPABASE_DB_PASSWORD>"
 ```
+*(Note: `prepareThreshold=0` is configured to ensure compatibility with Supabase's transaction pooler).*
 
 ---
 
 ## 🌐 Network Tab Evidence
 
-Below is the verified HTTP request/response evidence captured from browser developer tools across all Lab 2 test scenarios:
+Verified HTTP request/response evidence captured from browser developer tools across all four required scenarios:
 
-### 1. Multi-Item Order (CONFIRMED & Stocks Decremented)
+### 1. Multi-Item Order (CONFIRMED & All Items Succeed)
 - **Scenario**: Purchasing 2x `P100` (Wireless Mouse) and 3x `P200` (Mechanical Keyboard).
 - **Request**: `POST http://localhost:8080/api/orders`
 - **Request Headers**: `Content-Type: application/json`, `Accept: application/json`
@@ -212,7 +210,7 @@ Below is the verified HTTP request/response evidence captured from browser devel
     ]
   }
   ```
-- **Result**: Order #1 created in `orders`, 2 line items stored in `order_items`, stock decremented, and confirmation notification published.
+- **Outcome**: Order #1 created, line items stored in `order_items`, stocks decremented, and confirmation notification logged.
 
 ---
 
@@ -251,9 +249,9 @@ Below is the verified HTTP request/response evidence captured from browser devel
 
 ---
 
-### 3. Order Cancellation & Stock Restoration
-- **Scenario**: User clicks "Cancel & Restock" on Order #1.
-- **Request**: `POST http://localhost:8080/api/orders/1/cancel`
+### 3. Order Cancellation & Restock Reflected in Inventory
+- **Scenario**: User cancels Order #1 (`POST /api/orders/1/cancel`), followed by `GET /api/inventory`.
+- **Request 1**: `POST http://localhost:8080/api/orders/1/cancel`
 - **Response Status**: `200 OK`
 - **Response Body**:
   ```json
@@ -272,14 +270,22 @@ Below is the verified HTTP request/response evidence captured from browser devel
     ]
   }
   ```
-- **Subsequent Inventory Check**: `GET http://localhost:8080/api/inventory`
+- **Request 2**: `GET http://localhost:8080/api/inventory`
 - **Response Status**: `200 OK`
-- **Outcome**: `P100` restored back to 25, `P200` restored back to 10.
+- **Response Body**:
+  ```json
+  [
+    {"productId": "P100", "name": "Wireless Mouse", "stock": 25},
+    {"productId": "P200", "name": "Mechanical Keyboard", "stock": 10},
+    {"productId": "P300", "name": "USB-C Hub", "stock": 0}
+  ]
+  ```
+- **Outcome**: `P100` restored to 25 and `P200` restored to 10.
 
 ---
 
 ### 4. Notification Activity Feed Evidence
-- **Scenario**: Fetching the activity feed after placing orders, triggering a low-stock alert (`P200` ordered down to 4 units, below threshold 5), and cancelling an order.
+- **Scenario**: Querying `GET /api/notifications` displaying confirmed order, rejected order, cancelled order, and low-stock alert (`P200` stock dropping below threshold 5).
 - **Request**: `GET http://localhost:8080/api/notifications`
 - **Response Status**: `200 OK`
 - **Response Body**:
@@ -288,22 +294,22 @@ Below is the verified HTTP request/response evidence captured from browser devel
     {
       "notificationId": 4,
       "message": "LOW-STOCK ALERT: Product P200 (Mechanical Keyboard) dropped to 4 units (threshold: 5). Reorder needed!",
-      "createdAt": "2026-09-17T10:24:10.870Z"
+      "createdAt": "2026-09-17T10:39:18.000Z"
     },
     {
       "notificationId": 3,
-      "message": "Order #1 cancelled: 2x P100, 3x P200 returned to inventory",
-      "createdAt": "2026-09-17T10:24:08.500Z"
+      "message": "Order #2 confirmed: 6x P200",
+      "createdAt": "2026-09-17T10:39:18.000Z"
     },
     {
       "notificationId": 2,
-      "message": "Order #2 rejected: Insufficient stock for P300 (requested: 1, available: 0)",
-      "createdAt": "2026-09-17T10:24:05.100Z"
+      "message": "Order #1 cancelled: 2x P100, 1x P200 returned to inventory",
+      "createdAt": "2026-09-17T10:38:57.801Z"
     },
     {
       "notificationId": 1,
-      "message": "Order #1 confirmed: 2x P100, 3x P200",
-      "createdAt": "2026-09-17T10:24:00.000Z"
+      "message": "Order #1 confirmed: 2x P100, 1x P200",
+      "createdAt": "2026-09-17T10:38:42.488Z"
     }
   ]
   ```
@@ -312,17 +318,25 @@ Below is the verified HTTP request/response evidence captured from browser devel
 
 ## 📝 300–500 Word Reflection
 
-1. **What differs between integrating Order/Inventory in-process vs. as separate microservices over a network --> what do you get for free, and what would you need to add back if split?**
-Integrating in-process within a modular monolith allows `Order` and `Inventory` to communicate via direct JVM method calls across shared memory. This gives us zero-latency execution "for free," eliminating serialization overhead, HTTP headers, and network latency. Crucially, it provides atomic ACID transactions: stock reservation and order placement execute inside a single `@Transactional` database session, guaranteeing an immediate, consistent rollback if inventory runs out. We also get compile-time type safety and interface contract verification out of the box. If split into network microservices, we must add back network resilience mechanisms like retries, timeouts, and circuit breakers (e.g., via Resilience4j). Because single-database transactions disappear, we also have to rebuild transactional consistency using the Saga pattern, message brokers (Kafka/RabbitMQ), transactional outboxes, and compensating transactions to handle order cancellations, along with operational tooling like distributed tracing (OpenTelemetry), service discovery, and separate CI/CD pipelines.
+1. **Multi-item orders now touch InventoryService several times within one request. What ensures this stays atomic in-process, and what would you need to add (e.g. sagas, compensating transactions) if Order and Inventory were split across a network?**
+In our in-process monolith, multi-item order placement remains atomic because both modules share the same database connection and thread context governed by Spring's `@Transactional` boundary on `OrderService.placeOrder()`. We enforce a two-phase application rule: `OrderService` pre-validates all requested items against stock before executing any reservation. If any single item lacks inventory, the entire order is rejected immediately with zero stock deducted. When all items pass validation, sequential invocations to `InventoryService.reserve()` execute within that single active ACID database transaction. If any runtime exception occurs mid-loop, Spring's transaction manager issues a complete rollback, discarding all intermediate reservations automatically.
+If split across a network, single-transaction ACID is lost. We would need to implement an asynchronous Saga pattern (orchestrated or choreographed) with compensating transactions. If item A and B succeed over REST/gRPC but item C fails at the remote inventory service, the Order orchestrator must dispatch compensating `POST /api/inventory/{productId}/restock` calls to release reserved units, or use a temporary "hold/pending" state with TTL expiration to prevent partial fulfillment anomalies.
 
-2. **Why does package-private visibility on InventoryServiceImpl matter for the module boundary --> what breaks if it's public?**
-Package-private visibility is the compile-time guardrail that strictly enforces the module boundary. By omitting the `public` modifier on `InventoryServiceImpl`, only classes within `edu.cit.rabanal.inventory` can access the concrete implementation. This forces `OrderService` in `edu.cit.rabanal.shop` to depend exclusively on the public `InventoryService` interface, leaving Spring to inject the bean at runtime. If it were declared `public`, encapsulation breaks down: developers could accidentally instantiate `InventoryServiceImpl` directly with `new` or autowire the concrete implementation instead of the interface. This leads to leaky abstractions and tight coupling, as external packages gain access to internal helper methods or domain details. Furthermore, our build-time ArchUnit test (`BoundaryTest.java`) would immediately fail because it explicitly checks that `InventoryServiceImpl` is non-public and inaccessible to `shop`.
+2. **How does publishing an event instead of calling Notification directly change the coupling between OrderService and Notification? What would you need if Notification became a separate microservice (message broker, delivery guarantees)?**
+Publishing domain events (`OrderPlacedEvent`, `OrderRejectedEvent`, `OrderCancelledEvent`) via Spring's `ApplicationEventPublisher` eliminates direct coupling between `OrderService` and Notification. `OrderService` has zero knowledge of `NotificationEventListener` or the `notifications` table; its only responsibility is announcing domain occurrences. ArchUnit tests enforce that neither `shop` nor `inventory` import anything from `notification`.
+If Notification were extracted into a separate microservice, in-memory Spring events cannot cross process boundaries. We would need:
+- An external message broker (such as Apache Kafka, RabbitMQ, or AWS SNS/SQS).
+- A Transactional Outbox pattern to ensure atomicity between local database writes and event publishing, avoiding dual-write failures.
+- Delivery guarantees: At-least-once delivery with consumer acknowledgments, idempotency keys (e.g., using `order_id` for deduplication), and Dead Letter Queues (DLQ) for malformed messages.
 
-3. **When would you extract Inventory into its own microservice, and what would need to change in your code to do it?**
-Inventory should only be extracted when operational requirements outweigh distributed system complexity. The primary driver is disproportionate scaling—such as flash sales or high-frequency warehouse barcode lookups that require autoscaling inventory read throughput independently without wasting resources scaling the heavier order lifecycle service. Another key driver is organizational isolation, where a dedicated logistics team takes full ownership of the inventory database, schema changes, and release cadence. To extract it, three main code changes are required:
-* Move the `edu.cit.rabanal.inventory` package into its own standalone Spring Boot repository backed by an isolated database.
-* Replace the local in-process `InventoryService` dependency in `OrderService` with an HTTP/REST client (e.g., Spring Cloud OpenFeign or `RestClient`) or a gRPC stub targeting the remote Inventory service.
-* Replace the monolithic `@Transactional` annotation with an asynchronous Saga pattern or event-driven choreography (publishing `OrderCreatedEvent`, handling `InventoryReservedEvent`, and executing compensating cancellation logic if reservation fails).
+3. **You now have three modules and two distinct event types. If forced to extract exactly one module into its own microservice first, which would you pick and why - and what changes in your code to do it?**
+If forced to extract one module first, **Notification** is the ideal choice.
+**Why Notification**: Notification is an asynchronous, write-only sink. Unlike Inventory—which is on the synchronous, latency-critical checkout path requiring strict two-way consistency—Notification is tolerant to eventual consistency. A temporary delay or outage in Notification never blocks a customer from completing checkout.
+**Code Changes Required**:
+1. Move `edu.cit.rabanal.notification` into a standalone Spring Boot repository with its own database.
+2. In the monolith, replace `@EventListener` with a message producer (e.g., `KafkaTemplate.send("order-events", event)`).
+3. In the Notification microservice, implement a `@KafkaListener` consumer to persist incoming events into local storage.
+4. Expose `GET /api/notifications` from the new service, updating the frontend API client.
 
 ---
 
@@ -338,9 +352,9 @@ Inventory should only be extracted when operational requirements outweigh distri
 cd backend
 $env:JAVA_HOME = "C:\Program Files\Java\jdk-26.0.2.1"
 
-# Option A: Live Supabase Cloud Database
+# Option A: Live Supabase Cloud Database (Pooler on Port 6543)
 $env:SPRING_PROFILES_ACTIVE = "supabase"
-$env:SUPABASE_DB_URL = "jdbc:postgresql://aws-0-ap-south-1.pooler.supabase.com:6543/postgres?sslmode=require"
+$env:SUPABASE_DB_URL = "jdbc:postgresql://aws-0-ap-south-1.pooler.supabase.com:6543/postgres?sslmode=require&prepareThreshold=0"
 $env:SUPABASE_DB_USER = "postgres.jjxfvolifvrctwkdivnk"
 $env:SUPABASE_DB_PASSWORD = "<YOUR_SUPABASE_DB_PASSWORD>"
 .\mvnw.cmd spring-boot:run
