@@ -53,5 +53,4 @@ export interface CartItem {
   quantity: number;
   stock: number;
   category?: string;
-  imageUrl?: string;
 }

@@ -11,7 +11,7 @@ import {
   AlertCircle,
 } from 'lucide-react';
 import { InventoryItem } from '../types';
-import { ProductMetadata, getProductMeta } from '../data/productData';
+import { ProductMetadata, getProductMeta, ProductIcon } from '../data/productData';
 
 interface ProductCardProps {
   item: InventoryItem;
@@ -53,43 +53,28 @@ export const ProductCard: React.FC<ProductCardProps> = ({
   };
 
   return (
-    <div className="group relative bg-white rounded-2xl border border-slate-200/90 shadow-sm hover:shadow-xl hover:border-indigo-200 transition-all duration-300 flex flex-col overflow-hidden">
-      {/* Product Image & Badges Container */}
-      <div className="relative aspect-[4/3] bg-slate-50 overflow-hidden">
-        <img
-          src={meta.imageUrl}
-          alt={item.name}
-          className="w-full h-full object-cover object-center group-hover:scale-105 transition-transform duration-500"
-          loading="lazy"
-        />
-
-        {/* Top Badges */}
-        <div className="absolute top-3 left-3 flex flex-wrap gap-1.5 z-10">
-          <span className="text-[11px] font-bold tracking-wide uppercase px-2.5 py-0.5 rounded-full bg-slate-900/80 backdrop-blur-sm text-white shadow-sm">
-            {meta.category}
-          </span>
-          {meta.badge && (
-            <span className="text-[11px] font-bold uppercase px-2.5 py-0.5 rounded-full bg-indigo-600 text-white shadow-sm">
-              {meta.badge}
-            </span>
-          )}
+    <div className="group relative bg-white rounded-2xl border border-slate-200/90 shadow-sm hover:shadow-xl hover:border-indigo-200 transition-all duration-300 flex flex-col justify-between overflow-hidden">
+      {/* Product Icon Header */}
+      <div className="p-5 pb-3 bg-gradient-to-b from-slate-50 to-white border-b border-slate-100 flex items-start justify-between">
+        <div className="w-14 h-14 rounded-2xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 group-hover:scale-110 transition-transform duration-300 shadow-xs">
+          <ProductIcon productId={item.productId} className="w-7 h-7" />
         </div>
 
-        {/* SKU Badge */}
-        <div className="absolute top-3 right-3 z-10">
-          <span className="text-[11px] font-mono font-bold px-2 py-0.5 rounded-md bg-white/90 text-slate-700 shadow-sm backdrop-blur-sm border border-slate-200">
+        <div className="flex flex-col items-end gap-1.5">
+          <div className="flex items-center gap-1.5">
+            <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-slate-100 text-slate-700">
+              {meta.category}
+            </span>
+            {meta.badge && (
+              <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full bg-indigo-600 text-white shadow-xs">
+                {meta.badge}
+              </span>
+            )}
+          </div>
+          <span className="text-xs font-mono font-bold text-slate-500 bg-white px-2 py-0.5 rounded border border-slate-200 shadow-xs">
             {item.productId}
           </span>
         </div>
-
-        {/* Quick View Button on Hover */}
-        <button
-          onClick={() => onQuickView(meta, item.stock)}
-          className="absolute inset-x-4 bottom-3 py-2 bg-white/95 hover:bg-white text-slate-800 text-xs font-semibold rounded-xl shadow-md backdrop-blur-sm flex items-center justify-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity duration-200"
-        >
-          <Eye className="w-3.5 h-3.5 text-indigo-600" />
-          <span>Quick View Specs</span>
-        </button>
       </div>
 
       {/* Card Content */}
@@ -124,13 +109,23 @@ export const ProductCard: React.FC<ProductCardProps> = ({
           </div>
 
           {/* Product Title (Exact name from database) */}
-          <h3
-            onClick={() => onQuickView(meta, item.stock)}
-            className="font-bold text-slate-900 text-lg leading-snug hover:text-indigo-600 transition-colors cursor-pointer line-clamp-1"
-            title={item.name}
-          >
-            {item.name}
-          </h3>
+          <div className="flex items-center justify-between gap-2">
+            <h3
+              onClick={() => onQuickView(meta, item.stock)}
+              className="font-bold text-slate-900 text-lg leading-snug hover:text-indigo-600 transition-colors cursor-pointer line-clamp-1"
+              title={item.name}
+            >
+              {item.name}
+            </h3>
+            <button
+              type="button"
+              onClick={() => onQuickView(meta, item.stock)}
+              className="text-[11px] font-semibold text-indigo-600 hover:text-indigo-800 shrink-0 flex items-center gap-0.5 hover:underline"
+            >
+              <Eye className="w-3 h-3" />
+              <span>Specs</span>
+            </button>
+          </div>
 
           <p className="text-xs text-slate-500 mt-1.5 line-clamp-2 leading-relaxed">
             {meta.description}

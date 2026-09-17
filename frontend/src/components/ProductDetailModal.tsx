@@ -11,7 +11,7 @@ import {
   ShieldCheck,
   RotateCcw,
 } from 'lucide-react';
-import { ProductMetadata } from '../data/productData';
+import { ProductMetadata, ProductIcon } from '../data/productData';
 
 interface ProductDetailModalProps {
   meta: ProductMetadata | null;
@@ -56,14 +56,15 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
           <X className="w-4 h-4" />
         </button>
 
-        {/* Left: Product Image */}
-        <div className="md:w-1/2 bg-slate-50 p-6 flex flex-col justify-center items-center relative">
-          <img
-            src={meta.imageUrl}
-            alt={meta.name}
-            className="w-full max-h-64 md:max-h-80 object-cover rounded-2xl shadow-sm"
-          />
-          <div className="mt-4 flex items-center gap-3 text-xs text-slate-500 font-medium">
+        {/* Left: Product Icon Display */}
+        <div className="md:w-1/2 bg-slate-50 p-8 flex flex-col justify-center items-center relative border-b md:border-b-0 md:border-r border-slate-100">
+          <div className="w-28 h-28 rounded-3xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 shadow-sm mb-4">
+            <ProductIcon productId={meta.productId} className="w-14 h-14" />
+          </div>
+          <span className="font-mono font-bold text-sm text-slate-700 bg-white px-3 py-1 rounded-xl border border-slate-200 shadow-xs">
+            SKU: {meta.productId}
+          </span>
+          <div className="mt-6 flex flex-wrap justify-center items-center gap-3 text-xs text-slate-500 font-medium">
             <span className="flex items-center gap-1">
               <Truck className="w-3.5 h-3.5 text-indigo-600" /> Monolith Speed
             </span>

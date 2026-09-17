@@ -1,3 +1,6 @@
+import React from 'react';
+import { Mouse, Keyboard, Usb, Package } from 'lucide-react';
+
 export interface ProductMetadata {
   productId: string;
   name: string;
@@ -7,7 +10,6 @@ export interface ProductMetadata {
   badge?: string;
   specs: string[];
   description: string;
-  imageUrl: string;
 }
 
 export const PRODUCT_CATALOG_METADATA: Record<string, ProductMetadata> = {
@@ -25,7 +27,6 @@ export const PRODUCT_CATALOG_METADATA: Record<string, ProductMetadata> = {
       'Rechargeable Battery'
     ],
     description: 'High-precision wireless optical mouse for smooth tracking and comfortable productivity.',
-    imageUrl: 'https://images.unsplash.com/photo-1527864550417-7fd91fc51a46?w=600&auto=format&fit=crop&q=80'
   },
   P200: {
     productId: 'P200',
@@ -41,7 +42,6 @@ export const PRODUCT_CATALOG_METADATA: Record<string, ProductMetadata> = {
       'USB Connectivity'
     ],
     description: 'Durable mechanical keyboard with tactile switches for responsive feedback and gaming.',
-    imageUrl: 'https://images.unsplash.com/photo-1587829741301-dc798b83add3?w=600&auto=format&fit=crop&q=80'
   },
   P300: {
     productId: 'P300',
@@ -56,7 +56,22 @@ export const PRODUCT_CATALOG_METADATA: Record<string, ProductMetadata> = {
       'Compact Aluminum Shell'
     ],
     description: 'Versatile multi-port USB-C adapter expanding connectivity for modern workstations.',
-    imageUrl: '/images/usb_c_hub.jpg'
+  }
+};
+
+export const ProductIcon: React.FC<{ productId: string; className?: string }> = ({
+  productId,
+  className = 'w-5 h-5',
+}) => {
+  switch (productId) {
+    case 'P100':
+      return React.createElement(Mouse, { className });
+    case 'P200':
+      return React.createElement(Keyboard, { className });
+    case 'P300':
+      return React.createElement(Usb, { className });
+    default:
+      return React.createElement(Package, { className });
   }
 };
 
@@ -76,6 +91,5 @@ export function getProductMeta(productId: string, fallbackName?: string): Produc
     reviewsCount: 20,
     specs: ['Standard Component', 'Tested Hardware'],
     description: 'Hardware item in modular monolith inventory.',
-    imageUrl: 'https://images.unsplash.com/photo-1591488320449-011701bb6704?w=600&auto=format&fit=crop&q=80'
   };
 }

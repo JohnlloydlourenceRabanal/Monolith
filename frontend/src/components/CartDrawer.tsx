@@ -10,7 +10,7 @@ import {
   AlertTriangle,
 } from 'lucide-react';
 import { CartItem, InventoryItem } from '../types';
-import { getProductMeta } from '../data/productData';
+import { ProductIcon } from '../data/productData';
 
 interface CartDrawerProps {
   isOpen: boolean;
@@ -103,18 +103,15 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
               </div>
             ) : (
               cart.map((item) => {
-                const meta = getProductMeta(item.productId, item.name);
                 const liveItem = inventory.find((i) => i.productId === item.productId);
                 const liveStock = liveItem ? liveItem.stock : item.stock;
                 const isOverStock = item.quantity > liveStock;
 
                 return (
-                  <div key={item.productId} className="py-4 first:pt-0 last:pb-0 flex gap-3">
-                    <img
-                      src={meta.imageUrl}
-                      alt={item.name}
-                      className="w-16 h-16 object-cover rounded-xl border border-slate-100 shrink-0 bg-slate-50"
-                    />
+                  <div key={item.productId} className="py-4 first:pt-0 last:pb-0 flex items-center gap-3">
+                    <div className="w-12 h-12 rounded-xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 shrink-0 shadow-xs">
+                      <ProductIcon productId={item.productId} className="w-6 h-6" />
+                    </div>
 
                     <div className="flex-1 min-w-0">
                       <div className="flex items-start justify-between gap-1">

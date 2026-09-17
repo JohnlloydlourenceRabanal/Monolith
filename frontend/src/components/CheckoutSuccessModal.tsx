@@ -10,7 +10,7 @@ import {
   PackageCheck,
 } from 'lucide-react';
 import { OrderResponse } from '../types';
-import { getProductMeta } from '../data/productData';
+import { getProductMeta, ProductIcon } from '../data/productData';
 
 interface CheckoutSuccessModalProps {
   result: OrderResponse | null;
@@ -170,11 +170,9 @@ export const CheckoutSuccessModal: React.FC<CheckoutSuccessModalProps> = ({
                       }`}
                     >
                       <div className="flex items-center gap-3 min-w-0">
-                        <img
-                          src={meta.imageUrl}
-                          alt={meta.name}
-                          className="w-10 h-10 object-cover rounded-lg border border-slate-200 shrink-0 bg-white"
-                        />
+                        <div className="w-10 h-10 rounded-lg border border-slate-200 shrink-0 bg-white flex items-center justify-center text-slate-600 shadow-xs">
+                          <ProductIcon productId={item.productId} className="w-5 h-5" />
+                        </div>
                         <div className="truncate">
                           <div className="flex items-center gap-1.5">
                             <span className="font-mono font-bold text-[10px] text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded">
