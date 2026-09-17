@@ -37,6 +37,9 @@ spring:
       minimum-idle: 2
       idle-timeout: 30000
       connection-timeout: 20000
+      data-source-properties:
+        prepareThreshold: 0
+        preparedStatementCacheQueries: 0
   jpa:
     database-platform: org.hibernate.dialect.PostgreSQLDialect
     hibernate:
