@@ -2,6 +2,8 @@ package edu.cit.rabanal.shop;
 
 import jakarta.persistence.*;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 
 @Entity
 @Table(name = "orders")
@@ -12,14 +14,8 @@ public class Order {
     @Column(name = "order_id")
     private Long orderId;
 
-    @Column(name = "product_id", nullable = false, length = 64)
-    private String productId;
-
-    @Column(name = "quantity", nullable = false)
-    private int quantity;
-
     @Column(name = "status", nullable = false, length = 32)
-    private String status; // "CONFIRMED" or "REJECTED"
+    private String status; // "CONFIRMED", "REJECTED", "CANCELLED"
 
     @Column(name = "reason", length = 512)
     private String reason;
@@ -27,34 +23,24 @@ public class Order {
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
+    @OneToMany(mappedBy = "order", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.EAGER)
+    private List<OrderItem> items = new ArrayList<>();
+
     public Order() {}
 
-    public Order(String productId, int quantity, String status, String reason, Instant createdAt) {
-        this.productId = productId;
-        this.quantity = quantity;
+    public Order(String status, String reason, Instant createdAt) {
         this.status = status;
         this.reason = reason;
         this.createdAt = createdAt;
     }
 
+    public void addItem(String productId, int quantity) {
+        OrderItem item = new OrderItem(this, productId, quantity);
+        this.items.add(item);
+    }
+
     public Long getOrderId() {
         return orderId;
-    }
-
-    public String getProductId() {
-        return productId;
-    }
-
-    public void setProductId(String productId) {
-        this.productId = productId;
-    }
-
-    public int getQuantity() {
-        return quantity;
-    }
-
-    public void setQuantity(int quantity) {
-        this.quantity = quantity;
     }
 
     public String getStatus() {
@@ -79,5 +65,13 @@ public class Order {
 
     public void setCreatedAt(Instant createdAt) {
         this.createdAt = createdAt;
+    }
+
+    public List<OrderItem> getItems() {
+        return items;
+    }
+
+    public void setItems(List<OrderItem> items) {
+        this.items = items;
     }
 }

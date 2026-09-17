@@ -8,6 +8,8 @@ public interface InventoryService {
 
     boolean reserve(String productId, int quantity);
 
+    void restock(String productId, int quantity);
+
     List<InventoryItem> getAllItems();
 
     void restockAll();

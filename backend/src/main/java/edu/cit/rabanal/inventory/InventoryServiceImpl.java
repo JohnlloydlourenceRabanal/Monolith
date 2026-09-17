@@ -1,7 +1,9 @@
 package edu.cit.rabanal.inventory;
 
+import edu.cit.rabanal.inventory.event.LowStockEvent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -18,11 +20,14 @@ import java.util.Optional;
 class InventoryServiceImpl implements InventoryService {
 
     private static final Logger log = LoggerFactory.getLogger(InventoryServiceImpl.class);
+    private static final int LOW_STOCK_THRESHOLD = 5;
 
     private final InventoryRepository inventoryRepository;
+    private final ApplicationEventPublisher eventPublisher;
 
-    InventoryServiceImpl(InventoryRepository inventoryRepository) {
+    InventoryServiceImpl(InventoryRepository inventoryRepository, ApplicationEventPublisher eventPublisher) {
         this.inventoryRepository = inventoryRepository;
+        this.eventPublisher = eventPublisher;
     }
 
     @Override
@@ -61,7 +66,35 @@ class InventoryServiceImpl implements InventoryService {
 
         log.info("[Reservation Confirmed] Reserved {} units of '{}'. Remaining stock: {}",
                 quantity, productId, item.getStock());
+
+        // Low-stock auto-reorder rule: publish event if stock drops below configured threshold (5)
+        if (item.getStock() < LOW_STOCK_THRESHOLD) {
+            log.warn("[Low Stock Detected] Product '{}' ({}) stock dropped to {} (threshold: {})",
+                    item.getProductId(), item.getName(), item.getStock(), LOW_STOCK_THRESHOLD);
+            eventPublisher.publishEvent(new LowStockEvent(
+                    item.getProductId(),
+                    item.getName(),
+                    item.getStock(),
+                    LOW_STOCK_THRESHOLD
+            ));
+        }
+
         return true;
+    }
+
+    @Override
+    @Transactional
+    public void restock(String productId, int quantity) {
+        log.info("[In-Process Call] InventoryService.restock('{}', quantity: {})", productId, quantity);
+        if (quantity <= 0) return;
+
+        Optional<InventoryItem> itemOpt = inventoryRepository.findById(productId);
+        if (itemOpt.isPresent()) {
+            InventoryItem item = itemOpt.get();
+            item.setStock(item.getStock() + quantity);
+            inventoryRepository.save(item);
+            log.info("[Restock] Restocked {} units for '{}'. New stock: {}", quantity, productId, item.getStock());
+        }
     }
 
     @Override

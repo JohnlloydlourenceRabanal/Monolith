@@ -41,4 +41,38 @@ public class BoundaryTest {
 
         rule.check(importedClasses);
     }
+
+    @Test
+    @DisplayName("Notification module must NEVER depend on OrderService or InventoryService")
+    void notificationModuleMustNotDependOnServicesOrRepositories() {
+        JavaClasses importedClasses = new ClassFileImporter().importPackages("edu.cit.rabanal");
+
+        ArchRule rule = noClasses()
+                .that().resideInAPackage("edu.cit.rabanal.notification..")
+                .should().dependOnClassesThat()
+                .haveFullyQualifiedName("edu.cit.rabanal.shop.OrderService")
+                .orShould().dependOnClassesThat()
+                .haveFullyQualifiedName("edu.cit.rabanal.inventory.InventoryService")
+                .orShould().dependOnClassesThat()
+                .haveFullyQualifiedName("edu.cit.rabanal.inventory.InventoryServiceImpl")
+                .orShould().dependOnClassesThat()
+                .haveFullyQualifiedName("edu.cit.rabanal.shop.OrderRepository")
+                .orShould().dependOnClassesThat()
+                .haveFullyQualifiedName("edu.cit.rabanal.inventory.InventoryRepository");
+
+        rule.check(importedClasses);
+    }
+
+    @Test
+    @DisplayName("Shop and Inventory modules must NEVER depend on the Notification module")
+    void shopAndInventoryMustNotDependOnNotification() {
+        JavaClasses importedClasses = new ClassFileImporter().importPackages("edu.cit.rabanal");
+
+        ArchRule rule = noClasses()
+                .that().resideInAnyPackage("edu.cit.rabanal.shop..", "edu.cit.rabanal.inventory..")
+                .should().dependOnClassesThat()
+                .resideInAPackage("edu.cit.rabanal.notification..");
+
+        rule.check(importedClasses);
+    }
 }

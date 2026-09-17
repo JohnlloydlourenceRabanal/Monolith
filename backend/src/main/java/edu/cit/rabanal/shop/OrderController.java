@@ -20,8 +20,14 @@ public class OrderController {
     @PostMapping
     public ResponseEntity<OrderResponse> createOrder(@Valid @RequestBody OrderRequest request) {
         OrderResponse response = orderService.placeOrder(request);
-        HttpStatus status = "CONFIRMED".equals(response.getStatus()) ? HttpStatus.OK : HttpStatus.CONFLICT;
+        HttpStatus status = "CONFIRMED".equalsIgnoreCase(response.getStatus()) ? HttpStatus.OK : HttpStatus.CONFLICT;
         return ResponseEntity.status(status).body(response);
+    }
+
+    @PostMapping("/{orderId}/cancel")
+    public ResponseEntity<OrderResponse> cancelOrder(@PathVariable Long orderId) {
+        OrderResponse response = orderService.cancelOrder(orderId);
+        return ResponseEntity.ok(response);
     }
 
     @GetMapping

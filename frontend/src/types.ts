@@ -4,22 +4,52 @@ export interface InventoryItem {
   stock: number;
 }
 
-export interface OrderRequest {
+export interface OrderItemRequest {
   productId: string;
   quantity: number;
 }
 
+export interface OrderRequest {
+  items: OrderItemRequest[];
+}
+
+export interface OrderItemOutcome {
+  productId: string;
+  quantity: number;
+  outcome: string;
+}
+
 export interface OrderResponse {
-  status: 'CONFIRMED' | 'REJECTED';
+  orderId: number;
+  status: 'CONFIRMED' | 'REJECTED' | 'CANCELLED';
   reason: string | null;
-  inventory: InventoryItem | null;
+  items: OrderItemOutcome[];
+  inventory: InventoryItem[];
+}
+
+export interface OrderItemRecord {
+  itemId: number;
+  productId: string;
+  quantity: number;
 }
 
 export interface OrderRecord {
   orderId: number;
-  productId: string;
-  quantity: number;
-  status: 'CONFIRMED' | 'REJECTED';
+  status: 'CONFIRMED' | 'REJECTED' | 'CANCELLED';
   reason: string | null;
   createdAt: string;
+  items: OrderItemRecord[];
+}
+
+export interface NotificationRecord {
+  notificationId: number;
+  message: string;
+  createdAt: string;
+}
+
+export interface CartItem {
+  productId: string;
+  name: string;
+  quantity: number;
+  stock: number;
 }
