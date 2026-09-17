@@ -272,7 +272,7 @@ export const App: React.FC = () => {
 
                 {cart.length === 0 ? (
                   <div className="py-6 text-center text-slate-400 text-xs border border-dashed border-slate-200 rounded-xl bg-slate-50/50">
-                    Your cart is empty. Add products above to start an order.
+                    Your cart is empty. Select a product and click <strong>+ Add</strong> above to add items.
                   </div>
                 ) : (
                   <div className="space-y-2">
@@ -299,24 +299,27 @@ export const App: React.FC = () => {
                         </button>
                       </div>
                     ))}
-
-                    <button
-                      type="button"
-                      onClick={handleSubmitOrder}
-                      disabled={submitting}
-                      className="w-full mt-4 py-3 px-4 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white font-medium rounded-xl text-sm transition shadow-sm hover:shadow flex items-center justify-center gap-2 disabled:opacity-50"
-                    >
-                      {submitting ? (
-                        <span>Validating &amp; Reserving Stock...</span>
-                      ) : (
-                        <>
-                          <span>Submit Multi-Item Order</span>
-                          <ArrowRight className="w-4 h-4" />
-                        </>
-                      )}
-                    </button>
                   </div>
                 )}
+
+                {/* Submit Multi-Item Order Button: Always visible */}
+                <button
+                  type="button"
+                  onClick={handleSubmitOrder}
+                  disabled={cart.length === 0 || submitting}
+                  className="w-full mt-3 py-3 px-4 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white font-medium rounded-xl text-sm transition shadow-sm hover:shadow flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-indigo-600"
+                >
+                  {submitting ? (
+                    <span>Validating &amp; Reserving Stock...</span>
+                  ) : cart.length === 0 ? (
+                    <span>Submit Multi-Item Order (Add items first)</span>
+                  ) : (
+                    <>
+                      <span>Submit Multi-Item Order ({cart.reduce((s, i) => s + i.quantity, 0)} items)</span>
+                      <ArrowRight className="w-4 h-4" />
+                    </>
+                  )}
+                </button>
               </div>
             </div>
 
