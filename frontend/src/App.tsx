@@ -9,6 +9,7 @@ import {
   Clock,
   Trash2,
   Plus,
+  Minus,
   RotateCcw,
   Bell,
   AlertTriangle,
@@ -74,11 +75,13 @@ export const App: React.FC = () => {
     if (!existingProduct) return;
 
     setCart((prevCart) => {
-      const existingCartIndex = prevCart.findIndex((i) => i.productId === selectedProductId);
-      if (existingCartIndex > -1) {
-        const updated = [...prevCart];
-        updated[existingCartIndex].quantity += itemQuantity;
-        return updated;
+      const exists = prevCart.some((i) => i.productId === selectedProductId);
+      if (exists) {
+        return prevCart.map((item) =>
+          item.productId === selectedProductId
+            ? { ...item, quantity: item.quantity + itemQuantity }
+            : item
+        );
       }
       return [
         ...prevCart,
@@ -92,6 +95,20 @@ export const App: React.FC = () => {
     });
 
     setItemQuantity(1);
+  };
+
+  const handleUpdateQuantity = (productId: string, delta: number) => {
+    setCart((prevCart) =>
+      prevCart
+        .map((item) => {
+          if (item.productId === productId) {
+            const newQty = item.quantity + delta;
+            return newQty > 0 ? { ...item, quantity: newQty } : null;
+          }
+          return item;
+        })
+        .filter((item): item is CartItem => item !== null)
+    );
   };
 
   const handleRemoveFromCart = (productId: string) => {
@@ -286,17 +303,40 @@ export const App: React.FC = () => {
                             {item.productId}
                           </span>
                           <span className="font-medium text-slate-800">{item.name}</span>
-                          <span className="text-xs font-mono text-slate-500">
-                            &times; {item.quantity}
-                          </span>
                         </div>
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveFromCart(item.productId)}
-                          className="text-slate-400 hover:text-rose-600 p-1 rounded-md transition"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
+
+                        <div className="flex items-center gap-2">
+                          <div className="flex items-center border border-slate-200 rounded-lg bg-slate-50 overflow-hidden">
+                            <button
+                              type="button"
+                              onClick={() => handleUpdateQuantity(item.productId, -1)}
+                              className="p-1.5 text-slate-500 hover:text-slate-800 hover:bg-slate-200 transition"
+                              title="Decrease quantity"
+                            >
+                              <Minus className="w-3.5 h-3.5" />
+                            </button>
+                            <span className="px-2.5 text-xs font-mono font-bold text-slate-800">
+                              {item.quantity}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => handleUpdateQuantity(item.productId, 1)}
+                              className="p-1.5 text-slate-500 hover:text-slate-800 hover:bg-slate-200 transition"
+                              title="Increase quantity"
+                            >
+                              <Plus className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveFromCart(item.productId)}
+                            className="text-slate-400 hover:text-rose-600 p-1.5 rounded-md hover:bg-rose-50 transition ml-1"
+                            title="Remove item"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -312,10 +352,10 @@ export const App: React.FC = () => {
                   {submitting ? (
                     <span>Validating &amp; Reserving Stock...</span>
                   ) : cart.length === 0 ? (
-                    <span>Submit Multi-Item Order (Add items first)</span>
+                    <span>Add Item First</span>
                   ) : (
                     <>
-                      <span>Submit Multi-Item Order ({cart.reduce((s, i) => s + i.quantity, 0)} items)</span>
+                      <span>Submit Order ({cart.reduce((s, i) => s + i.quantity, 0)} items)</span>
                       <ArrowRight className="w-4 h-4" />
                     </>
                   )}
