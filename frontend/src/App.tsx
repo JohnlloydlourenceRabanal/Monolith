@@ -30,7 +30,6 @@ import { ProductCard } from './components/ProductCard';
 import { ProductDetailModal } from './components/ProductDetailModal';
 import { CartDrawer } from './components/CartDrawer';
 import { OrderCard } from './components/OrderCard';
-import { ServicesSection } from './components/ServicesSection';
 import { CheckoutSuccessModal } from './components/CheckoutSuccessModal';
 import { ToastContainer, ToastMessage } from './components/ToastContainer';
 
@@ -454,17 +453,6 @@ export const App: React.FC = () => {
                 </button>
               </div>
             )}
-
-            {/* Tech Services Workshop Section */}
-            <ServicesSection
-              onBookService={(name) => {
-                addToast(
-                  'Consultation Booked!',
-                  `Technician booked for: ${name}. You will receive a confirmation call shortly.`,
-                  'success'
-                );
-              }}
-            />
           </div>
         )}
 
@@ -727,7 +715,7 @@ export const App: React.FC = () => {
                                   : 'bg-slate-100 hover:bg-indigo-50 hover:text-indigo-600'
                               }`}
                             >
-                              {isZero ? 'Add (Test Rollback)' : 'Add 1 to Cart'}
+                              {isZero ? 'Add' : 'Add 1 to Cart'} 
                             </button>
                           </td>
                         </tr>

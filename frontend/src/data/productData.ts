@@ -10,17 +10,6 @@ export interface ProductMetadata {
   imageUrl: string;
 }
 
-export interface ServiceItem {
-  id: string;
-  name: string;
-  category: 'Services';
-  duration: string;
-  rating: number;
-  reviewsCount: number;
-  description: string;
-  icon: string;
-}
-
 export const PRODUCT_CATALOG_METADATA: Record<string, ProductMetadata> = {
   P100: {
     productId: 'P100',
@@ -70,39 +59,6 @@ export const PRODUCT_CATALOG_METADATA: Record<string, ProductMetadata> = {
     imageUrl: '/images/usb_c_hub.jpg'
   }
 };
-
-export const SERVICES_CATALOG: ServiceItem[] = [
-  {
-    id: 'SRV-01',
-    name: 'Custom Gaming PC Assembly & Cable Management',
-    category: 'Services',
-    duration: '2-4 Hours',
-    rating: 5.0,
-    reviewsCount: 64,
-    description: 'Professional hardware assembly, neat zip-tie harness cable routing, BIOS setup, and optimal fan curve tuning.',
-    icon: 'Cpu'
-  },
-  {
-    id: 'SRV-02',
-    name: 'Thermal Paste Repaste & Deep Dust Sanitization',
-    category: 'Services',
-    duration: '1 Hour',
-    rating: 4.9,
-    reviewsCount: 93,
-    description: 'Arctic thermal compound application, GPU heatsink ultrasonic cleaning, and thermal benchmark report.',
-    icon: 'Wrench'
-  },
-  {
-    id: 'SRV-03',
-    name: 'OS Clean Install, Driver Suite & Hardware Diagnostics',
-    category: 'Services',
-    duration: '1-2 Hours',
-    rating: 4.9,
-    reviewsCount: 51,
-    description: 'Clean OS installation, memory MemTest86 verification, SMART disk health check, and diagnostic validation.',
-    icon: 'ShieldCheck'
-  }
-];
 
 export function getProductMeta(productId: string, fallbackName?: string): ProductMetadata {
   if (PRODUCT_CATALOG_METADATA[productId]) {
