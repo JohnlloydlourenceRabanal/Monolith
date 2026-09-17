@@ -1,18 +1,19 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
-  ShoppingBag,
+  History,
+  Package,
+  Bell,
+  ArrowUpDown,
+  RefreshCw,
+  Sparkles,
+  ShieldCheck,
+  Zap,
+  RotateCcw,
   CheckCircle2,
   AlertCircle,
-  Package,
-  ArrowRight,
-  History,
-  Clock,
-  Trash2,
-  Plus,
-  Minus,
-  RotateCcw,
-  Bell,
   AlertTriangle,
+  Flame,
+  Layers,
   XCircle,
 } from 'lucide-react';
 import { api } from './services/api';
@@ -23,25 +24,59 @@ import {
   NotificationRecord,
   CartItem,
 } from './types';
+import { ProductMetadata, getProductMeta } from './data/productData';
+import { Navbar, NavTab } from './components/Navbar';
+import { ProductCard } from './components/ProductCard';
+import { ProductDetailModal } from './components/ProductDetailModal';
+import { CartDrawer } from './components/CartDrawer';
+import { OrderCard } from './components/OrderCard';
+import { ServicesSection } from './components/ServicesSection';
+import { CheckoutSuccessModal } from './components/CheckoutSuccessModal';
+import { ToastContainer, ToastMessage } from './components/ToastContainer';
 
 export const App: React.FC = () => {
+  // Live Monolith Data
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
   const [orders, setOrders] = useState<OrderRecord[]>([]);
   const [notifications, setNotifications] = useState<NotificationRecord[]>([]);
 
-  // Cart state
+  // Navigation & Filtering
+  const [activeTab, setActiveTab] = useState<NavTab>('store');
+  const [searchQuery, setSearchQuery] = useState<string>('');
+  const [selectedCategory, setSelectedCategory] = useState<string>('All');
+  const [sortBy, setSortBy] = useState<string>('featured');
+  const [orderFilter, setOrderFilter] = useState<'ALL' | 'CONFIRMED' | 'CANCELLED' | 'REJECTED'>('ALL');
+  const [notificationFilter, setNotificationFilter] = useState<'ALL' | 'STOCK' | 'CONFIRMED' | 'CANCELLED' | 'REJECTED'>('ALL');
+
+  // Cart & Modals
   const [cart, setCart] = useState<CartItem[]>([]);
-  const [selectedProductId, setSelectedProductId] = useState<string>('P100');
-  const [itemQuantity, setItemQuantity] = useState<number>(1);
-
-  // Interaction state
-  const [submitting, setSubmitting] = useState<boolean>(false);
-  const [restocking, setRestocking] = useState<boolean>(false);
-  const [cancellingOrderId, setCancellingOrderId] = useState<number | null>(null);
-
-  // Result state
+  const [isCartOpen, setIsCartOpen] = useState<boolean>(false);
+  const [selectedDetail, setSelectedDetail] = useState<{ meta: ProductMetadata; stock: number } | null>(null);
   const [orderResult, setOrderResult] = useState<OrderResponse | null>(null);
+  const [isOrderResultModalOpen, setIsOrderResultModalOpen] = useState<boolean>(false);
 
+  // Loading States
+  const [isSubmittingOrder, setIsSubmittingOrder] = useState<boolean>(false);
+  const [isCancellingOrderId, setIsCancellingOrderId] = useState<number | null>(null);
+  const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
+  const [isRestockingAll, setIsRestockingAll] = useState<boolean>(false);
+
+  // Toast System
+  const [toasts, setToasts] = useState<ToastMessage[]>([]);
+
+  const addToast = (title: string, message?: string, type: 'success' | 'error' | 'warning' | 'info' = 'info') => {
+    const id = Date.now().toString() + Math.random().toString(36).substring(2, 6);
+    setToasts((prev) => [...prev, { id, title, message, type }]);
+    setTimeout(() => {
+      setToasts((prev) => prev.filter((t) => t.id !== id));
+    }, 4500);
+  };
+
+  const removeToast = (id: string) => {
+    setToasts((prev) => prev.filter((t) => t.id !== id));
+  };
+
+  // Load backend data
   const loadData = useCallback(async () => {
     try {
       const [items, orderList, notificationList] = await Promise.all([
@@ -52,58 +87,69 @@ export const App: React.FC = () => {
       setInventory(items);
       setOrders(orderList);
       setNotifications(notificationList);
-
-      if (items.length > 0 && !items.some((i) => i.productId === selectedProductId)) {
-        setSelectedProductId(items[0].productId);
-      }
     } catch (err) {
-      console.error('Failed to load data:', err);
+      console.error('Failed to load monolith data:', err);
     }
-  }, [selectedProductId]);
+  }, []);
+
+  const handleManualRefresh = async () => {
+    setIsRefreshing(true);
+    await loadData();
+    setTimeout(() => setIsRefreshing(false), 500);
+    addToast('Data Synchronized', 'Fetched latest inventory, orders, and domain events.', 'info');
+  };
 
   useEffect(() => {
     loadData();
-    const interval = setInterval(loadData, 6000);
+    const interval = setInterval(loadData, 5000);
     return () => clearInterval(interval);
   }, [loadData]);
 
-  const handleAddToCart = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedProductId || itemQuantity <= 0) return;
+  // Cart Calculations
+  const cartCount = useMemo(() => cart.reduce((sum, item) => sum + item.quantity, 0), [cart]);
 
-    const existingProduct = inventory.find((i) => i.productId === selectedProductId);
-    if (!existingProduct) return;
+  const lowStockCount = useMemo(() => {
+    return inventory.filter((item) => item.stock > 0 && item.stock < 5).length;
+  }, [inventory]);
+
+  // Cart Actions
+  const handleAddToCart = (productId: string, quantity: number) => {
+    const existing = inventory.find((i) => i.productId === productId);
+    if (!existing || existing.stock <= 0) {
+      addToast('Out of Stock', `Product ${productId} is currently out of stock.`, 'warning');
+      return;
+    }
 
     setCart((prevCart) => {
-      const exists = prevCart.some((i) => i.productId === selectedProductId);
-      if (exists) {
+      const alreadyInCart = prevCart.some((i) => i.productId === productId);
+      if (alreadyInCart) {
         return prevCart.map((item) =>
-          item.productId === selectedProductId
-            ? { ...item, quantity: item.quantity + itemQuantity }
+          item.productId === productId
+            ? { ...item, quantity: item.quantity + quantity }
             : item
         );
       }
       return [
         ...prevCart,
         {
-          productId: existingProduct.productId,
-          name: existingProduct.name,
-          quantity: itemQuantity,
-          stock: existingProduct.stock,
+          productId: existing.productId,
+          name: existing.name,
+          quantity,
+          stock: existing.stock,
         },
       ];
     });
 
-    setItemQuantity(1);
+    addToast('Added to Cart', `${quantity}x ${existing.name} added to your cart.`, 'success');
   };
 
-  const handleUpdateQuantity = (productId: string, delta: number) => {
-    setCart((prevCart) =>
-      prevCart
+  const handleUpdateCartQty = (productId: string, delta: number) => {
+    setCart((prev) =>
+      prev
         .map((item) => {
           if (item.productId === productId) {
-            const newQty = item.quantity + delta;
-            return newQty > 0 ? { ...item, quantity: newQty } : null;
+            const nextQty = item.quantity + delta;
+            return nextQty > 0 ? { ...item, quantity: nextQty } : null;
           }
           return item;
         })
@@ -111,18 +157,21 @@ export const App: React.FC = () => {
     );
   };
 
-  const handleRemoveFromCart = (productId: string) => {
+  const handleRemoveCartItem = (productId: string) => {
     setCart((prev) => prev.filter((i) => i.productId !== productId));
+    addToast('Item Removed', `Removed SKU ${productId} from your cart.`, 'info');
   };
 
   const handleClearCart = () => {
     setCart([]);
+    addToast('Cart Cleared', 'All items removed from your cart.', 'info');
   };
 
+  // Submit Order (All-or-Nothing Atomic Guarantee)
   const handleSubmitOrder = async () => {
     if (cart.length === 0) return;
 
-    setSubmitting(true);
+    setIsSubmittingOrder(true);
     try {
       const response = await api.placeOrder({
         items: cart.map((c) => ({
@@ -132,521 +181,758 @@ export const App: React.FC = () => {
       });
 
       setOrderResult(response);
-      setCart([]);
+      setIsOrderResultModalOpen(true);
+
+      if (response.status === 'CONFIRMED') {
+        setCart([]);
+        setIsCartOpen(false);
+        addToast(
+          'Order Confirmed!',
+          `Order #${response.orderId} processed with all-or-nothing rollback protection.`,
+          'success'
+        );
+      } else {
+        addToast(
+          'Order Validation Failed',
+          response.reason || 'Insufficient inventory stock for requested line items.',
+          'error'
+        );
+      }
+
       await loadData();
     } catch (err: any) {
-      console.error('Order error:', err);
+      console.error('Order submission error:', err);
+      addToast('Order Submission Error', err.message || 'Network communication error.', 'error');
     } finally {
-      setSubmitting(false);
+      setIsSubmittingOrder(false);
     }
   };
 
+  // Cancel Order
   const handleCancelOrder = async (orderId: number) => {
-    setCancellingOrderId(orderId);
+    setIsCancellingOrderId(orderId);
     try {
       const response = await api.cancelOrder(orderId);
       setOrderResult(response);
+      addToast(
+        'Order Cancelled',
+        `Order #${orderId} was cancelled and inventory was immediately restocked.`,
+        'warning'
+      );
       await loadData();
     } catch (err: any) {
-      console.error('Cancellation error:', err);
-      alert(err.message || 'Failed to cancel order');
+      console.error('Cancel order error:', err);
+      addToast('Cancellation Error', err.message || 'Failed to cancel order.', 'error');
     } finally {
-      setCancellingOrderId(null);
+      setIsCancellingOrderId(null);
     }
   };
 
+  // Reorder Items
+  const handleReorder = (items: { productId: string; quantity: number }[]) => {
+    items.forEach((item) => {
+      const inv = inventory.find((i) => i.productId === item.productId);
+      if (inv && inv.stock > 0) {
+        handleAddToCart(item.productId, Math.min(item.quantity, inv.stock));
+      }
+    });
+    setIsCartOpen(true);
+    addToast('Items Added to Cart', 'Reordered items loaded into your cart.', 'info');
+  };
+
+  // Restock All Items (Simulate Admin Reset)
   const handleRestockAll = async () => {
-    setRestocking(true);
+    setIsRestockingAll(true);
     try {
-      const items = await api.restockAll();
-      setInventory(items);
+      const updated = await api.restockAll();
+      setInventory(updated);
+      addToast(
+        'Inventory Restocked',
+        'Reset stock to defaults: P100 (Mouse)=25, P200 (Keyboard)=10, P300 (USB-C Hub)=0',
+        'success'
+      );
       await loadData();
-    } catch (err) {
-      console.error('Failed to restock:', err);
+    } catch (err: any) {
+      console.error('Restock error:', err);
+      addToast('Restock Failed', err.message || 'Could not reset inventory.', 'error');
     } finally {
-      setRestocking(false);
+      setIsRestockingAll(false);
     }
   };
 
-  const selectedItem = inventory.find((i) => i.productId === selectedProductId);
+  // Filtered & Sorted Products
+  const filteredProducts = useMemo(() => {
+    return inventory
+      .filter((item) => {
+        const meta = getProductMeta(item.productId, item.name);
+        const matchesQuery =
+          item.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          item.productId.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          meta.description.toLowerCase().includes(searchQuery.toLowerCase());
+
+        const matchesCategory =
+          selectedCategory === 'All' || meta.category === selectedCategory;
+
+        return matchesQuery && matchesCategory;
+      })
+      .sort((a, b) => {
+        const metaA = getProductMeta(a.productId, a.name);
+        const metaB = getProductMeta(b.productId, b.name);
+
+        if (sortBy === 'name-asc') return a.name.localeCompare(b.name);
+        if (sortBy === 'stock-desc') return b.stock - a.stock;
+        if (sortBy === 'rating-desc') return metaB.rating - metaA.rating;
+        return 0; // featured
+      });
+  }, [inventory, searchQuery, selectedCategory, sortBy]);
+
+  // Filtered Orders
+  const filteredOrders = useMemo(() => {
+    return orders.filter((order) => {
+      if (orderFilter === 'ALL') return true;
+      return order.status === orderFilter;
+    });
+  }, [orders, orderFilter]);
+
+  // Filtered Notifications
+  const filteredNotifications = useMemo(() => {
+    return notifications.filter((notif) => {
+      const msg = notif.message.toUpperCase();
+      if (notificationFilter === 'STOCK') return msg.includes('LOW-STOCK') || msg.includes('ALERT');
+      if (notificationFilter === 'CONFIRMED') return msg.includes('CONFIRMED');
+      if (notificationFilter === 'CANCELLED') return msg.includes('CANCELLED');
+      if (notificationFilter === 'REJECTED') return msg.includes('REJECTED');
+      return true;
+    });
+  }, [notifications, notificationFilter]);
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col font-sans antialiased selection:bg-indigo-100 selection:text-indigo-900">
-      {/* Top Navigation Bar */}
-      <header className="border-b border-slate-200/80 bg-white/90 backdrop-blur sticky top-0 z-30 shadow-[0_1px_2px_rgba(0,0,0,0.03)]">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-indigo-600 flex items-center justify-center text-white shadow-md shadow-indigo-600/20">
-              <ShoppingBag className="w-5 h-5" />
-            </div>
-            <div>
-              <h1 className="text-base font-semibold text-slate-900 tracking-tight">
-                Rabanal's Computer parts and Services
-              </h1>
-              
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={handleRestockAll}
-              disabled={restocking}
-              className="text-xs font-medium text-indigo-600 hover:text-indigo-700 bg-indigo-50 hover:bg-indigo-100/80 px-3 py-1.5 rounded-lg border border-indigo-200 transition disabled:opacity-50 flex items-center gap-1.5"
-            >
-              <RotateCcw className={`w-3.5 h-3.5 ${restocking ? 'animate-spin' : ''}`} />
-              <span>{restocking ? 'Restocking...' : 'Restock All'}</span>
-            </button>
-          </div>
-        </div>
-      </header>
+    <div className="min-h-screen bg-slate-50/60 text-slate-800 flex flex-col font-sans selection:bg-indigo-500 selection:text-white">
+      {/* Interactive Toast Notifications */}
+      <ToastContainer toasts={toasts} onDismiss={removeToast} />
+
+      {/* Modern Sticky Navigation Header */}
+      <Navbar
+        activeTab={activeTab}
+        setActiveTab={setActiveTab}
+        cartCount={cartCount}
+        onOpenCart={() => setIsCartOpen(true)}
+        ordersCount={orders.length}
+        lowStockCount={lowStockCount}
+        notificationsCount={notifications.length}
+        searchQuery={searchQuery}
+        setSearchQuery={setSearchQuery}
+        onRefresh={handleManualRefresh}
+        isRefreshing={isRefreshing}
+      />
 
       {/* Main Content Area */}
-      <main className="flex-1 max-w-6xl w-full mx-auto px-4 sm:px-6 py-8 space-y-8">
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-          {/* Left Column (7 cols): Cart & Order Placement */}
-          <div className="lg:col-span-7 space-y-6">
-            {/* Step 1: Cart Builder */}
-            <div className="bg-white border border-slate-200/80 rounded-2xl p-6 shadow-sm space-y-6">
-              <div>
-                <h2 className="text-lg font-semibold text-slate-900 tracking-tight flex items-center gap-2">
-                  <ShoppingBag className="w-5 h-5 text-indigo-600" />
-                  <span>Order</span>
-                </h2>
-                <p className="text-xs text-slate-500 mt-1">
-                  Add items to your cart. All items are validated atomically before reserving stock.
+      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {/* ========================================================================= */}
+        {/* VIEW 1: SHOP & PRODUCT CATALOG                                           */}
+        {/* ========================================================================= */}
+        {activeTab === 'store' && (
+          <div className="space-y-8 animate-fade-in">
+            {/* Store Hero Banner */}
+            <div className="relative overflow-hidden rounded-3xl bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white p-8 sm:p-12 shadow-xl">
+              <div className="relative z-10 max-w-2xl">
+                <div className="inline-flex items-center gap-2 bg-indigo-500/20 text-indigo-300 text-xs font-semibold px-3 py-1 rounded-full border border-indigo-500/30 mb-4 backdrop-blur-sm">
+                  <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
+                  <span>Lab 2 In-Process Modular Monolith Edition</span>
+                </div>
+
+                <h1 className="text-3xl sm:text-4xl lg:text-5xl font-extrabold tracking-tight text-white leading-tight">
+                  High Performance Hardware &amp; Tech Services
+                </h1>
+
+                <p className="mt-4 text-slate-300 text-sm sm:text-base leading-relaxed">
+                  Shop premium computer peripherals, parts, and expert assembly services with 
+                  guaranteed all-or-nothing multi-item checkout, instant domain notifications, and 
+                  one-click atomic cancellation.
                 </p>
+
+                {/* Promotional Guarantees */}
+                <div className="mt-8 flex flex-wrap gap-3 sm:gap-4 text-xs font-medium text-slate-200">
+                  <div className="flex items-center gap-2 bg-white/10 px-3.5 py-2 rounded-xl backdrop-blur-md border border-white/10">
+                    <Zap className="w-4 h-4 text-indigo-400" />
+                    <span>In-Process Monolith Speed</span>
+                  </div>
+                  <div className="flex items-center gap-2 bg-white/10 px-3.5 py-2 rounded-xl backdrop-blur-md border border-white/10">
+                    <ShieldCheck className="w-4 h-4 text-emerald-400" />
+                    <span>Atomic Rollback Guarantee</span>
+                  </div>
+                  <div className="flex items-center gap-2 bg-white/10 px-3.5 py-2 rounded-xl backdrop-blur-md border border-white/10">
+                    <RotateCcw className="w-4 h-4 text-amber-400" />
+                    <span>1-Click Restock Cancellation</span>
+                  </div>
+                </div>
               </div>
 
-              {/* Add item to cart form */}
-              <form onSubmit={handleAddToCart} className="space-y-4 bg-slate-50/70 p-4 rounded-xl border border-slate-200/60">
-                <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-end">
-                  <div className="sm:col-span-7 space-y-1.5">
-                    <label className="text-xs font-medium text-slate-700">Select Product</label>
-                    <select
-                      value={selectedProductId}
-                      onChange={(e) => setSelectedProductId(e.target.value)}
-                      className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm text-slate-900 focus:outline-none focus:border-indigo-600 font-medium"
-                    >
-                      {inventory.map((item) => (
-                        <option key={item.productId} value={item.productId}>
-                          {item.productId} &mdash; {item.name} ({item.stock} in stock)
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div className="sm:col-span-3 space-y-1.5">
-                    <label className="text-xs font-medium text-slate-700">Quantity</label>
-                    <input
-                      type="number"
-                      min="1"
-                      max="999"
-                      value={itemQuantity}
-                      onChange={(e) => setItemQuantity(Math.max(1, parseInt(e.target.value) || 1))}
-                      className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm text-slate-900 focus:outline-none focus:border-indigo-600 font-mono"
-                    />
-                  </div>
-
-                  <div className="sm:col-span-2">
-                    <button
-                      type="submit"
-                      className="w-full py-2 px-3 bg-indigo-600 hover:bg-indigo-700 text-white font-medium rounded-lg text-sm transition shadow-sm flex items-center justify-center gap-1"
-                    >
-                      <Plus className="w-4 h-4" />
-                      <span>Add</span>
-                    </button>
-                  </div>
-                </div>
-
-                {selectedItem && (
-                  <div className="text-[11px] text-slate-500 font-medium flex items-center gap-1.5">
-                    <span>Current availability for {selectedItem.productId}:</span>
-                    <strong className={selectedItem.stock === 0 ? 'text-rose-600' : selectedItem.stock < 5 ? 'text-amber-600' : 'text-emerald-600'}>
-                      {selectedItem.stock} units
-                    </strong>
-                  </div>
-                )}
-              </form>
-
-              {/* Cart Items List */}
-              <div className="space-y-3">
-                <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-                  <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">
-                    Cart Items ({cart.reduce((sum, item) => sum + item.quantity, 0)})
-                  </span>
-                  {cart.length > 0 && (
-                    <button
-                      type="button"
-                      onClick={handleClearCart}
-                      className="text-xs text-slate-400 hover:text-rose-600 transition"
-                    >
-                      Clear Cart
-                    </button>
-                  )}
-                </div>
-
-                {cart.length === 0 ? (
-                  <div className="py-6 text-center text-slate-400 text-xs border border-dashed border-slate-200 rounded-xl bg-slate-50/50">
-                    Your cart is empty. Select a product and click <strong>+ Add</strong> above to add items.
-                  </div>
-                ) : (
-                  <div className="space-y-2">
-                    {cart.map((item) => (
-                      <div
-                        key={item.productId}
-                        className="flex items-center justify-between p-3 rounded-xl bg-white border border-slate-200 shadow-sm text-sm"
-                      >
-                        <div className="flex items-center gap-3">
-                          <span className="font-mono text-xs font-semibold px-2 py-0.5 rounded bg-indigo-50 text-indigo-700 border border-indigo-100">
-                            {item.productId}
-                          </span>
-                          <span className="font-medium text-slate-800">{item.name}</span>
-                        </div>
-
-                        <div className="flex items-center gap-2">
-                          <div className="flex items-center border border-slate-200 rounded-lg bg-slate-50 overflow-hidden">
-                            <button
-                              type="button"
-                              onClick={() => handleUpdateQuantity(item.productId, -1)}
-                              className="p-1.5 text-slate-500 hover:text-slate-800 hover:bg-slate-200 transition"
-                              title="Decrease quantity"
-                            >
-                              <Minus className="w-3.5 h-3.5" />
-                            </button>
-                            <span className="px-2.5 text-xs font-mono font-bold text-slate-800">
-                              {item.quantity}
-                            </span>
-                            <button
-                              type="button"
-                              onClick={() => handleUpdateQuantity(item.productId, 1)}
-                              className="p-1.5 text-slate-500 hover:text-slate-800 hover:bg-slate-200 transition"
-                              title="Increase quantity"
-                            >
-                              <Plus className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-
-                          <button
-                            type="button"
-                            onClick={() => handleRemoveFromCart(item.productId)}
-                            className="text-slate-400 hover:text-rose-600 p-1.5 rounded-md hover:bg-rose-50 transition ml-1"
-                            title="Remove item"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {/* Submit Multi-Item Order Button: Always visible */}
-                <button
-                  type="button"
-                  onClick={handleSubmitOrder}
-                  disabled={cart.length === 0 || submitting}
-                  className="w-full mt-3 py-3 px-4 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white font-medium rounded-xl text-sm transition shadow-sm hover:shadow flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-indigo-600"
-                >
-                  {submitting ? (
-                    <span>Validating &amp; Reserving Stock...</span>
-                  ) : cart.length === 0 ? (
-                    <span>Add Item First</span>
-                  ) : (
-                    <>
-                      <span>Submit Order ({cart.reduce((s, i) => s + i.quantity, 0)} items)</span>
-                      <ArrowRight className="w-4 h-4" />
-                    </>
-                  )}
-                </button>
+              {/* Decorative background visual */}
+              <div className="absolute -right-16 -bottom-16 w-96 h-96 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none" />
+              <div className="absolute right-10 top-1/2 -translate-y-1/2 hidden lg:block opacity-20 pointer-events-none">
+                <Layers className="w-72 h-72 text-indigo-300" />
               </div>
             </div>
 
-            {/* Order Result Card */}
-            {orderResult && (
-              <div className={`p-5 rounded-2xl border shadow-sm space-y-4 ${
-                orderResult.status === 'CONFIRMED'
-                  ? 'bg-emerald-50/80 border-emerald-200 text-emerald-950'
-                  : orderResult.status === 'CANCELLED'
-                  ? 'bg-slate-100/90 border-slate-300 text-slate-900'
-                  : 'bg-rose-50/80 border-rose-200 text-rose-950'
-              }`}>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2.5">
-                    {orderResult.status === 'CONFIRMED' ? (
-                      <CheckCircle2 className="w-5 h-5 text-emerald-600 flex-shrink-0" />
-                    ) : orderResult.status === 'CANCELLED' ? (
-                      <RotateCcw className="w-5 h-5 text-slate-600 flex-shrink-0" />
-                    ) : (
-                      <AlertCircle className="w-5 h-5 text-rose-600 flex-shrink-0" />
-                    )}
-                    <div>
-                      <span className="text-xs font-semibold uppercase tracking-wider block opacity-70">
-                        Transaction Outcome
-                      </span>
-                      <strong className="text-base tracking-tight">
-                        Order #{orderResult.orderId} &mdash; {orderResult.status}
-                      </strong>
-                    </div>
-                  </div>
+            {/* Catalog Filter & Controls Bar */}
+            <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm flex flex-wrap items-center justify-between gap-4">
+              {/* Category Pills */}
+              <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0 no-scrollbar">
+                {['All', 'Peripherals', 'Accessories', 'Components'].map((category) => (
+                  <button
+                    key={category}
+                    onClick={() => setSelectedCategory(category)}
+                    className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all whitespace-nowrap ${
+                      selectedCategory === category
+                        ? 'bg-indigo-600 text-white shadow-sm'
+                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200 hover:text-slate-900'
+                    }`}
+                  >
+                    {category}
+                  </button>
+                ))}
+              </div>
+
+              {/* Sorting & Search Indicator */}
+              <div className="flex items-center gap-3 w-full sm:w-auto justify-between sm:justify-end">
+                <div className="flex items-center gap-1.5 text-xs text-slate-500">
+                  <ArrowUpDown className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Sort:</span>
+                  <select
+                    value={sortBy}
+                    onChange={(e) => setSortBy(e.target.value)}
+                    className="bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 py-1.5 pl-2 pr-7 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  >
+                    <option value="featured">Featured Hardware</option>
+                    <option value="name-asc">Product Name (A-Z)</option>
+                    <option value="stock-desc">Stock: Highest Available</option>
+                    <option value="rating-desc">Highest Rated</option>
+                  </select>
                 </div>
 
-                {orderResult.reason && (
-                  <p className="text-xs border-t border-slate-200/60 pt-2 opacity-90">
-                    <strong>Reason:</strong> {orderResult.reason}
-                  </p>
-                )}
+                <span className="text-xs font-mono text-slate-400">
+                  {filteredProducts.length} {filteredProducts.length === 1 ? 'item' : 'items'}
+                </span>
+              </div>
+            </div>
 
-                {orderResult.items && orderResult.items.length > 0 && (
-                  <div className="space-y-1.5 border-t border-slate-200/60 pt-2">
-                    <span className="text-xs font-medium opacity-80 block">Line Item Breakdown:</span>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                      {orderResult.items.map((item, idx) => (
-                        <div
-                          key={idx}
-                          className="bg-white/90 px-3 py-1.5 rounded-lg border border-slate-200/70 text-xs flex items-center justify-between font-mono"
-                        >
-                          <span>{item.quantity}x {item.productId}</span>
-                          <span className={`font-semibold text-[11px] ${
-                            item.outcome === 'CONFIRMED'
-                              ? 'text-emerald-700'
-                              : item.outcome === 'RESTOCKED'
-                              ? 'text-indigo-700'
-                              : 'text-rose-700'
-                          }`}>
-                            {item.outcome}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
+            {/* Product Cards Grid */}
+            {filteredProducts.length > 0 ? (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                {filteredProducts.map((item) => (
+                  <ProductCard
+                    key={item.productId}
+                    item={item}
+                    onAddToCart={handleAddToCart}
+                    onQuickView={(meta, stock) => setSelectedDetail({ meta, stock })}
+                  />
+                ))}
+              </div>
+            ) : (
+              <div className="bg-white rounded-3xl border border-slate-200 p-12 text-center shadow-sm">
+                <div className="w-16 h-16 rounded-2xl bg-slate-100 flex items-center justify-center text-slate-400 mx-auto mb-4">
+                  <Package className="w-8 h-8" />
+                </div>
+                <h3 className="text-base font-bold text-slate-800">No hardware found</h3>
+                <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto">
+                  No products matched your search or category filter. Try clearing your query or select "All".
+                </p>
+                <button
+                  onClick={() => {
+                    setSearchQuery('');
+                    setSelectedCategory('All');
+                  }}
+                  className="mt-4 px-4 py-2 bg-indigo-600 text-white rounded-xl text-xs font-bold hover:bg-indigo-700 transition-colors"
+                >
+                  Reset Catalog Filters
+                </button>
               </div>
             )}
 
-            {/* Order History with Cancel Button */}
-            <div className="bg-white border border-slate-200/80 rounded-2xl p-6 shadow-sm space-y-4">
-              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-                <div className="flex items-center gap-2">
-                  <History className="w-4 h-4 text-indigo-600" />
-                  <h2 className="text-base font-semibold text-slate-900 tracking-tight">
-                    Order History
-                  </h2>
-                </div>
-                <span className="text-xs font-mono text-slate-500 bg-slate-100 px-2.5 py-0.5 rounded-full">
-                  {orders.length} orders
-                </span>
+            {/* Tech Services Workshop Section */}
+            <ServicesSection
+              onBookService={(name) => {
+                addToast(
+                  'Consultation Booked!',
+                  `Technician booked for: ${name}. You will receive a confirmation call shortly.`,
+                  'success'
+                );
+              }}
+            />
+          </div>
+        )}
+
+        {/* ========================================================================= */}
+        {/* VIEW 2: MY ORDERS & REAL-TIME TRACKING                                   */}
+        {/* ========================================================================= */}
+        {activeTab === 'orders' && (
+          <div className="space-y-6 animate-fade-in">
+            {/* Orders Header & Summary */}
+            <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm flex flex-wrap items-center justify-between gap-4">
+              <div>
+                <h2 className="text-xl font-extrabold text-slate-900 tracking-tight flex items-center gap-2">
+                  <History className="w-6 h-6 text-indigo-600" />
+                  <span>Order Tracking &amp; History</span>
+                </h2>
+                <p className="text-xs text-slate-500 mt-1">
+                  Track live multi-item orders, review all-or-nothing rollback records, and trigger instant restock cancellations.
+                </p>
               </div>
 
-              {orders.length === 0 ? (
-                <div className="py-8 text-center text-slate-400 text-xs">
-                  No orders recorded yet.
-                </div>
-              ) : (
-                <div className="divide-y divide-slate-100 max-h-96 overflow-y-auto pr-1">
-                  {orders.map((order) => (
-                    <div
-                      key={order.orderId}
-                      className="py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-sm hover:bg-slate-50/70 px-2 rounded-lg transition"
-                    >
-                      <div className="space-y-1">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="font-mono text-xs font-semibold text-slate-500 bg-slate-100 px-2 py-0.5 rounded">
-                            #{order.orderId}
-                          </span>
-                          <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold ${
-                            order.status === 'CONFIRMED'
-                              ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
-                              : order.status === 'CANCELLED'
-                              ? 'bg-slate-100 text-slate-700 border border-slate-300'
-                              : 'bg-rose-100 text-rose-700 border border-rose-200'
-                          }`}>
-                            {order.status}
-                          </span>
-                          <span className="text-xs text-slate-400 font-mono flex items-center gap-1">
-                            <Clock className="w-3 h-3" />
-                            {new Date(order.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
-                          </span>
-                        </div>
+              {/* Status Filter Tabs */}
+              <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl">
+                {(['ALL', 'CONFIRMED', 'CANCELLED', 'REJECTED'] as const).map((filter) => (
+                  <button
+                    key={filter}
+                    onClick={() => setOrderFilter(filter)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                      orderFilter === filter
+                        ? 'bg-white text-indigo-700 shadow-xs'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    {filter === 'ALL' ? 'All Orders' : filter}
+                  </button>
+                ))}
+              </div>
+            </div>
 
-                        {/* Line Items List */}
-                        <div className="text-xs text-slate-700 flex flex-wrap gap-1.5 pt-1">
-                          {order.items && order.items.length > 0 ? (
-                            order.items.map((item) => (
-                              <span key={item.itemId} className="font-mono bg-slate-100 px-1.5 py-0.5 rounded text-slate-700 text-[11px]">
-                                {item.quantity}x {item.productId}
+            {/* Orders List */}
+            {filteredOrders.length > 0 ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {filteredOrders.map((order) => (
+                  <OrderCard
+                    key={order.orderId}
+                    order={order}
+                    onCancelOrder={handleCancelOrder}
+                    isCancelling={isCancellingOrderId === order.orderId}
+                    onReorder={handleReorder}
+                  />
+                ))}
+              </div>
+            ) : (
+              <div className="bg-white rounded-3xl border border-slate-200 p-12 text-center shadow-sm">
+                <div className="w-16 h-16 rounded-2xl bg-slate-100 flex items-center justify-center text-slate-400 mx-auto mb-4">
+                  <History className="w-8 h-8" />
+                </div>
+                <h3 className="text-base font-bold text-slate-800">No orders found</h3>
+                <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto">
+                  {orderFilter === 'ALL'
+                    ? 'You have not submitted any orders yet. Add computer parts to your cart to get started.'
+                    : `No orders currently match the "${orderFilter}" filter.`}
+                </p>
+                <button
+                  onClick={() => {
+                    setOrderFilter('ALL');
+                    setActiveTab('store');
+                  }}
+                  className="mt-4 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition-colors"
+                >
+                  Go to Store &amp; Build Order
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ========================================================================= */}
+        {/* VIEW 3: INVENTORY ADMIN & AUTO-REORDER RULE MONITOR                      */}
+        {/* ========================================================================= */}
+        {activeTab === 'inventory' && (
+          <div className="space-y-6 animate-fade-in">
+            {/* Inventory Top KPI Metrics */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
+                <div>
+                  <span className="text-xs text-slate-500 font-medium">Catalog SKUs</span>
+                  <div className="text-2xl font-black text-slate-900 mt-1">{inventory.length}</div>
+                </div>
+                <div className="w-10 h-10 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold">
+                  <Package className="w-5 h-5" />
+                </div>
+              </div>
+
+              <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
+                <div>
+                  <span className="text-xs text-slate-500 font-medium">Total In-Stock Units</span>
+                  <div className="text-2xl font-black text-emerald-600 mt-1">
+                    {inventory.reduce((sum, i) => sum + i.stock, 0)}
+                  </div>
+                </div>
+                <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold">
+                  <CheckCircle2 className="w-5 h-5" />
+                </div>
+              </div>
+
+              <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
+                <div>
+                  <span className="text-xs text-slate-500 font-medium">Low Stock Alerts (&lt;5)</span>
+                  <div className="text-2xl font-black text-amber-600 mt-1">
+                    {lowStockCount}
+                  </div>
+                </div>
+                <div className="w-10 h-10 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center font-bold">
+                  <AlertTriangle className="w-5 h-5" />
+                </div>
+              </div>
+
+              <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
+                <div>
+                  <span className="text-xs text-slate-500 font-medium">Out of Stock</span>
+                  <div className="text-2xl font-black text-rose-600 mt-1">
+                    {inventory.filter((i) => i.stock === 0).length}
+                  </div>
+                </div>
+                <div className="w-10 h-10 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center font-bold">
+                  <AlertCircle className="w-5 h-5" />
+                </div>
+              </div>
+            </div>
+
+            {/* Inventory Table Container */}
+            <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
+              <div className="p-6 border-b border-slate-200 flex flex-wrap items-center justify-between gap-4">
+                <div>
+                  <h3 className="text-lg font-bold text-slate-900 tracking-tight flex items-center gap-2">
+                    <Package className="w-5 h-5 text-indigo-600" />
+                    <span>Live Stock Levels &amp; Auto-Reorder Monitor</span>
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Items dropping below 5 units automatically trigger a <code className="font-mono text-indigo-600 bg-indigo-50 px-1 rounded">LowStockEvent</code> domain notification.
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={handleRestockAll}
+                    disabled={isRestockingAll}
+                    className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 text-white rounded-xl text-xs font-bold shadow-sm transition-colors flex items-center gap-1.5"
+                  >
+                    <RotateCcw className={`w-3.5 h-3.5 ${isRestockingAll ? 'animate-spin' : ''}`} />
+                    <span>Restock All to Defaults</span>
+                  </button>
+
+                  <button
+                    onClick={handleManualRefresh}
+                    disabled={isRefreshing}
+                    className="p-2 border border-slate-200 text-slate-600 hover:bg-slate-50 rounded-xl transition-colors"
+                    title="Refresh Now"
+                  >
+                    <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin text-indigo-600' : ''}`} />
+                  </button>
+                </div>
+              </div>
+
+              {/* Table */}
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs text-slate-600">
+                  <thead className="bg-slate-50 text-slate-400 font-bold uppercase tracking-wider text-[10px] border-b border-slate-200">
+                    <tr>
+                      <th className="py-3.5 px-6">Product &amp; SKU</th>
+                      <th className="py-3.5 px-6">Category</th>
+                      <th className="py-3.5 px-6">Available Stock</th>
+                      <th className="py-3.5 px-6">Stock Health</th>
+                      <th className="py-3.5 px-6">Auto-Reorder Rule</th>
+                      <th className="py-3.5 px-6 text-right">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 font-medium">
+                    {inventory.map((item) => {
+                      const meta = getProductMeta(item.productId, item.name);
+                      const isLow = item.stock > 0 && item.stock < 5;
+                      const isZero = item.stock === 0;
+
+                      return (
+                        <tr key={item.productId} className="hover:bg-slate-50/70 transition-colors">
+                          <td className="py-4 px-6 flex items-center gap-3">
+                            <img
+                              src={meta.imageUrl}
+                              alt={item.name}
+                              className="w-10 h-10 object-cover rounded-xl border border-slate-200 shrink-0 bg-white"
+                            />
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <span className="font-mono font-bold text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded text-[11px]">
+                                  {item.productId}
+                                </span>
+                                <span className="font-bold text-slate-900 text-xs">
+                                  {item.name}
+                                </span>
+                              </div>
+                              <span className="text-[11px] text-slate-400">
+                                Product ID: {item.productId}
                               </span>
-                            ))
-                          ) : (
-                            <span className="text-slate-400 italic">No line items</span>
-                          )}
-                        </div>
+                            </div>
+                          </td>
 
-                        {order.reason && (
-                          <p className="text-xs text-rose-600">
-                            Reason: {order.reason}
-                          </p>
-                        )}
-                      </div>
+                          <td className="py-4 px-6">
+                            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-slate-100 text-slate-700">
+                              {meta.category}
+                            </span>
+                          </td>
 
-                      {/* Cancel Order Action */}
-                      <div>
-                        {order.status === 'CONFIRMED' && (
-                          <button
-                            type="button"
-                            onClick={() => handleCancelOrder(order.orderId)}
-                            disabled={cancellingOrderId === order.orderId}
-                            className="text-xs font-medium text-rose-700 hover:text-rose-800 bg-rose-50 hover:bg-rose-100 px-3 py-1.5 rounded-lg border border-rose-200 transition disabled:opacity-50 flex items-center gap-1"
-                          >
-                            <XCircle className="w-3.5 h-3.5" />
-                            <span>{cancellingOrderId === order.orderId ? 'Cancelling...' : 'Cancel & Restock'}</span>
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
+                          <td className="py-4 px-6 font-mono font-bold text-sm text-slate-900">
+                            {item.stock} units
+                          </td>
+
+                          <td className="py-4 px-6">
+                            {isZero ? (
+                              <span className="inline-flex items-center gap-1 text-[11px] font-bold text-rose-700 bg-rose-50 px-2 py-0.5 rounded-md border border-rose-200">
+                                <AlertCircle className="w-3 h-3" />
+                                Out of Stock
+                              </span>
+                            ) : isLow ? (
+                              <span className="inline-flex items-center gap-1 text-[11px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200 animate-pulse">
+                                <AlertTriangle className="w-3 h-3" />
+                                Critical (&lt; 5)
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 text-[11px] font-medium text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
+                                <CheckCircle2 className="w-3 h-3" />
+                                Healthy Stock
+                              </span>
+                            )}
+                          </td>
+
+                          <td className="py-4 px-6 text-[11px]">
+                            {isLow ? (
+                              <span className="text-amber-700 font-semibold flex items-center gap-1">
+                                <Flame className="w-3.5 h-3.5 text-amber-500" />
+                                LowStockEvent Published!
+                              </span>
+                            ) : isZero ? (
+                              <span className="text-rose-600 font-medium">
+                                Reorder Required immediately
+                              </span>
+                            ) : (
+                              <span className="text-slate-400">Triggers if stock drops &lt; 5</span>
+                            )}
+                          </td>
+
+                          <td className="py-4 px-6 text-right">
+                            <button
+                              onClick={() => {
+                                handleAddToCart(item.productId, 1);
+                                setIsCartOpen(true);
+                              }}
+                              disabled={isZero}
+                              className="px-3 py-1.5 bg-slate-100 hover:bg-indigo-50 hover:text-indigo-600 disabled:opacity-40 disabled:cursor-not-allowed rounded-lg text-xs font-semibold transition-colors"
+                            >
+                              Add 1 to Cart
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
+        )}
 
-          {/* Right Column (5 cols): Live Inventory & Notification Activity Feed */}
-          <div className="lg:col-span-5 space-y-6">
-            {/* Live Inventory Dashboard */}
-            <div className="bg-white border border-slate-200/80 rounded-2xl p-6 shadow-sm space-y-4">
-              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-                <div className="flex items-center gap-2">
-                  <Package className="w-4 h-4 text-indigo-600" />
-                  <h2 className="text-base font-semibold text-slate-900 tracking-tight">
-                    Inventory
-                  </h2>
-                </div>
-                <span className="text-[11px] font-mono text-slate-400">
-                  Threshold: &lt;5
-                </span>
+        {/* ========================================================================= */}
+        {/* VIEW 4: NOTIFICATION MODULE & DOMAIN ACTIVITY FEED                       */}
+        {/* ========================================================================= */}
+        {activeTab === 'notifications' && (
+          <div className="space-y-6 animate-fade-in">
+            {/* Feed Header */}
+            <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm flex flex-wrap items-center justify-between gap-4">
+              <div>
+                <h2 className="text-xl font-extrabold text-slate-900 tracking-tight flex items-center gap-2">
+                  <Bell className="w-6 h-6 text-indigo-600" />
+                  <span>Domain Event Activity Feed</span>
+                </h2>
+                <p className="text-xs text-slate-500 mt-1">
+                  Decoupled events consumed by <code className="font-mono text-indigo-600 bg-indigo-50 px-1 rounded">edu.cit.rabanal.notification</code> via Spring's <code className="font-mono text-indigo-600 bg-indigo-50 px-1 rounded">ApplicationEventPublisher</code>.
+                </p>
               </div>
 
+              {/* Event Type Filters */}
+              <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl flex-wrap">
+                {(['ALL', 'STOCK', 'CONFIRMED', 'CANCELLED', 'REJECTED'] as const).map((filter) => (
+                  <button
+                    key={filter}
+                    onClick={() => setNotificationFilter(filter)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                      notificationFilter === filter
+                        ? 'bg-white text-indigo-700 shadow-xs'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    {filter === 'ALL'
+                      ? 'All Events'
+                      : filter === 'STOCK'
+                      ? '⚠️ Stock Alerts'
+                      : filter}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Event Timeline Cards */}
+            {filteredNotifications.length > 0 ? (
               <div className="space-y-3">
-                {inventory.map((item) => {
-                  const isZero = item.stock === 0;
-                  const isLow = item.stock < 5 && !isZero;
+                {filteredNotifications.map((notif) => {
+                  const isStockAlert =
+                    notif.message.includes('LOW-STOCK') || notif.message.includes('ALERT');
+                  const isConfirmed = notif.message.includes('confirmed');
+                  const isCancelled = notif.message.includes('cancelled');
+                  const isRejected = notif.message.includes('rejected');
+
+                  const cardStyle = isStockAlert
+                    ? 'border-amber-200 bg-amber-50/50 hover:bg-amber-50'
+                    : isConfirmed
+                    ? 'border-emerald-200 bg-emerald-50/30 hover:bg-emerald-50/60'
+                    : isCancelled
+                    ? 'border-amber-200 bg-slate-50 hover:bg-amber-50/40'
+                    : isRejected
+                    ? 'border-rose-200 bg-rose-50/30 hover:bg-rose-50/60'
+                    : 'border-slate-200 bg-slate-50';
+
+                  const badgeStyle = isStockAlert
+                    ? 'bg-amber-100 text-amber-800 border-amber-200'
+                    : isConfirmed
+                    ? 'bg-emerald-100 text-emerald-800 border-emerald-200'
+                    : isCancelled
+                    ? 'bg-amber-100 text-amber-800 border-amber-200'
+                    : 'bg-rose-100 text-rose-800 border-rose-200';
+
+                  const notifDate = new Date(notif.createdAt);
+                  const timeFormatted = isNaN(notifDate.getTime())
+                    ? notif.createdAt
+                    : notifDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
                   return (
                     <div
-                      key={item.productId}
-                      className={`p-3.5 rounded-xl border transition flex items-center justify-between ${
-                        isZero
-                          ? 'bg-rose-50/60 border-rose-200'
-                          : isLow
-                          ? 'bg-amber-50/60 border-amber-200'
-                          : 'bg-slate-50 border-slate-200/70'
-                      }`}
+                      key={notif.notificationId}
+                      className={`p-4 rounded-2xl border shadow-xs transition-all flex items-start gap-3.5 ${cardStyle}`}
                     >
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <span className="font-mono text-xs font-bold text-indigo-600">
-                            {item.productId}
-                          </span>
-                          <span className="text-sm font-semibold text-slate-800">
-                            {item.name}
-                          </span>
-                        </div>
-                        {isLow && (
-                          <span className="text-[10px] font-medium text-amber-700 flex items-center gap-1 mt-0.5">
-                            <AlertTriangle className="w-3 h-3" />
-                            Reorder needed (low stock)
-                          </span>
-                        )}
-                        {isZero && (
-                          <span className="text-[10px] font-medium text-rose-700 flex items-center gap-1 mt-0.5">
-                            <AlertCircle className="w-3 h-3" />
-                            Depleted (0 stock)
-                          </span>
+                      <div className="mt-0.5 shrink-0">
+                        {isStockAlert ? (
+                          <div className="w-8 h-8 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center font-bold">
+                            <AlertTriangle className="w-4 h-4" />
+                          </div>
+                        ) : isConfirmed ? (
+                          <div className="w-8 h-8 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold">
+                            <CheckCircle2 className="w-4 h-4" />
+                          </div>
+                        ) : isCancelled ? (
+                          <div className="w-8 h-8 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center font-bold">
+                            <RotateCcw className="w-4 h-4" />
+                          </div>
+                        ) : (
+                          <div className="w-8 h-8 rounded-xl bg-rose-100 text-rose-700 flex items-center justify-center font-bold">
+                            <XCircle className="w-4 h-4" />
+                          </div>
                         )}
                       </div>
 
-                      <div className="text-right">
-                        <span className={`px-2.5 py-1 rounded-full text-xs font-mono font-bold ${
-                          isZero
-                            ? 'bg-rose-100 text-rose-800 border border-rose-200'
-                            : isLow
-                            ? 'bg-amber-100 text-amber-900 border border-amber-300'
-                            : 'bg-emerald-100 text-emerald-800 border border-emerald-200'
-                        }`}>
-                          {item.stock} left
-                        </span>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-2">
+                            <span
+                              className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded border ${badgeStyle}`}
+                            >
+                              {isStockAlert
+                                ? 'LowStockEvent'
+                                : isConfirmed
+                                ? 'OrderPlacedEvent'
+                                : isCancelled
+                                ? 'OrderCancelledEvent'
+                                : 'OrderRejectedEvent'}
+                            </span>
+                            <span className="font-mono text-xs text-slate-400">
+                              ID: #{notif.notificationId}
+                            </span>
+                          </div>
+
+                          <span className="text-xs text-slate-400 font-mono">
+                            {timeFormatted}
+                          </span>
+                        </div>
+
+                        <p className="text-xs font-semibold text-slate-800 mt-1.5 leading-relaxed">
+                          {notif.message}
+                        </p>
                       </div>
                     </div>
                   );
                 })}
               </div>
-            </div>
-
-            {/* Notification Activity Feed */}
-            <div className="bg-white border border-slate-200/80 rounded-2xl p-6 shadow-sm space-y-4">
-              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-                <div className="flex items-center gap-2">
-                  <Bell className="w-4 h-4 text-indigo-600" />
-                  <h2 className="text-base font-semibold text-slate-900 tracking-tight">
-                    Domain Activity
-                  </h2>
+            ) : (
+              <div className="bg-white rounded-3xl border border-slate-200 p-12 text-center shadow-sm">
+                <div className="w-16 h-16 rounded-2xl bg-slate-100 flex items-center justify-center text-slate-400 mx-auto mb-4">
+                  <Bell className="w-8 h-8" />
                 </div>
-                <span className="text-xs font-mono text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">
-                  {notifications.length} events
-                </span>
+                <h3 className="text-base font-bold text-slate-800">No domain events recorded</h3>
+                <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto">
+                  Domain events will be recorded here when orders are placed, cancelled, or when inventory stock triggers the auto-reorder rule.
+                </p>
               </div>
+            )}
+          </div>
+        )}
+      </main>
 
-              {notifications.length === 0 ? (
-                <div className="py-8 text-center text-slate-400 text-xs">
-                  No domain events published yet.
-                </div>
-              ) : (
-                <div className="space-y-2.5 max-h-96 overflow-y-auto pr-1">
-                  {notifications.map((notif) => {
-                    const isLowStock = notif.message.includes('LOW-STOCK') || notif.message.includes('Reorder');
-                    const isConfirmed = notif.message.includes('confirmed');
-                    const isCancelled = notif.message.includes('cancelled');
+      {/* Slide-Over Shopping Cart & Checkout Drawer */}
+      <CartDrawer
+        isOpen={isCartOpen}
+        onClose={() => setIsCartOpen(false)}
+        cart={cart}
+        inventory={inventory}
+        onUpdateQuantity={handleUpdateCartQty}
+        onRemoveItem={handleRemoveCartItem}
+        onClearCart={handleClearCart}
+        onSubmitOrder={handleSubmitOrder}
+        isSubmitting={isSubmittingOrder}
+      />
 
-                    return (
-                      <div
-                        key={notif.notificationId}
-                        className={`p-3 rounded-xl border text-xs space-y-1 transition ${
-                          isLowStock
-                            ? 'bg-amber-50/80 border-amber-200 text-amber-950'
-                            : isConfirmed
-                            ? 'bg-emerald-50/80 border-emerald-200 text-emerald-950'
-                            : isCancelled
-                            ? 'bg-slate-100/90 border-slate-300 text-slate-900'
-                            : 'bg-rose-50/80 border-rose-200 text-rose-950'
-                        }`}
-                      >
-                        <div className="flex items-start gap-2">
-                          {isLowStock ? (
-                            <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
-                          ) : isConfirmed ? (
-                            <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0 mt-0.5" />
-                          ) : isCancelled ? (
-                            <RotateCcw className="w-4 h-4 text-slate-600 flex-shrink-0 mt-0.5" />
-                          ) : (
-                            <XCircle className="w-4 h-4 text-rose-600 flex-shrink-0 mt-0.5" />
-                          )}
-                          <div className="flex-1">
-                            <p className="font-medium leading-relaxed">
-                              {notif.message}
-                            </p>
-                            <span className="text-[10px] font-mono opacity-60 block mt-1">
-                              {new Date(notif.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
+      {/* Product Deep Detail & Specifications Modal */}
+      <ProductDetailModal
+        meta={selectedDetail?.meta || null}
+        stock={selectedDetail?.stock || 0}
+        isOpen={Boolean(selectedDetail)}
+        onClose={() => setSelectedDetail(null)}
+        onAddToCart={handleAddToCart}
+      />
+
+      {/* Checkout Outcome & Atomic Rollback Modal */}
+      <CheckoutSuccessModal
+        result={orderResult}
+        isOpen={isOrderResultModalOpen}
+        onClose={() => setIsOrderResultModalOpen(false)}
+        onViewOrders={() => setActiveTab('orders')}
+      />
+
+      {/* Clean Light-Mode Footer */}
+      <footer className="mt-16 bg-white border-t border-slate-200 py-8 text-xs text-slate-500">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-4 text-center sm:text-left">
+          <div>
+            <div className="font-bold text-slate-900">
+              Rabanal's Computer Parts &amp; Services
             </div>
+            <p className="text-slate-400 mt-0.5">
+              In-Process Modular Monolith Architecture • CIT Department
+            </p>
+          </div>
+
+          <div className="flex items-center gap-4 text-slate-400">
+            <span className="hover:text-slate-600 cursor-pointer" onClick={() => setActiveTab('store')}>Storefront</span>
+            <span>•</span>
+            <span className="hover:text-slate-600 cursor-pointer" onClick={() => setActiveTab('orders')}>Orders</span>
+            <span>•</span>
+            <span className="hover:text-slate-600 cursor-pointer" onClick={() => setActiveTab('inventory')}>Inventory</span>
+            <span>•</span>
+            <span className="hover:text-slate-600 cursor-pointer" onClick={() => setActiveTab('notifications')}>Domain Activity</span>
+          </div>
+
+          <div className="text-slate-400 text-[11px] font-mono">
+            Spring Boot 3.3.4 + React 18 + Supabase Pooler
           </div>
         </div>
-      </main>
+      </footer>
     </div>
   );
 };
