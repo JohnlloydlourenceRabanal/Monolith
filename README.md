@@ -180,6 +180,8 @@ $env:SUPABASE_DB_PASSWORD = "<YOUR_SUPABASE_DB_PASSWORD>"
 Verified HTTP request/response evidence captured from browser developer tools across all four required scenarios:
 
 ### 1. Multi-Item Order (CONFIRMED & All Items Succeed)
+<img width="1919" height="947" alt="Screenshot 2026-09-17 202459" src="https://github.com/user-attachments/assets/ece91cc8-dd70-4430-9180-41533df0e94c" />
+
 - **Scenario**: Purchasing 2x `P100` (Wireless Mouse) and 3x `P200` (Mechanical Keyboard).
 - **Request**: `POST http://localhost:8080/api/orders`
 - **Request Headers**: `Content-Type: application/json`, `Accept: application/json`
@@ -215,6 +217,8 @@ Verified HTTP request/response evidence captured from browser developer tools ac
 ---
 
 ### 2. Multi-Item Order (REJECTED & All-or-Nothing Rollback)
+<img width="1919" height="945" alt="Screenshot 2026-09-17 202600" src="https://github.com/user-attachments/assets/d6c5270f-9d17-45c8-9ee4-9eaee45c8827" />
+
 - **Scenario**: Ordering 2x `P100` (available: 23) and 1x `P300` (available: 0).
 - **Request**: `POST http://localhost:8080/api/orders`
 - **Request Headers**: `Content-Type: application/json`, `Accept: application/json`
@@ -250,6 +254,8 @@ Verified HTTP request/response evidence captured from browser developer tools ac
 ---
 
 ### 3. Order Cancellation & Restock Reflected in Inventory
+<img width="1919" height="944" alt="Screenshot 2026-09-17 202718" src="https://github.com/user-attachments/assets/732d07b2-6369-4bec-8773-1b782b4aa3c5" />
+
 - **Scenario**: User cancels Order #1 (`POST /api/orders/1/cancel`), followed by `GET /api/inventory`.
 - **Request 1**: `POST http://localhost:8080/api/orders/1/cancel`
 - **Response Status**: `200 OK`
@@ -285,6 +291,8 @@ Verified HTTP request/response evidence captured from browser developer tools ac
 ---
 
 ### 4. Notification Activity Feed Evidence
+<img width="1919" height="942" alt="Screenshot 2026-09-17 203123" src="https://github.com/user-attachments/assets/feef412e-daab-447c-9bbf-9b0989e2d370" />
+
 - **Scenario**: Querying `GET /api/notifications` displaying confirmed order, rejected order, cancelled order, and low-stock alert (`P200` stock dropping below threshold 5).
 - **Request**: `GET http://localhost:8080/api/notifications`
 - **Response Status**: `200 OK`
