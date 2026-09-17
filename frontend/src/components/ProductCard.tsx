@@ -8,6 +8,7 @@ import {
   Plus,
   Minus,
   CheckCircle2,
+  AlertCircle,
 } from 'lucide-react';
 import { InventoryItem } from '../types';
 import { ProductMetadata, getProductMeta } from '../data/productData';
@@ -31,7 +32,9 @@ export const ProductCard: React.FC<ProductCardProps> = ({
   const isLowStock = item.stock > 0 && item.stock < 5;
 
   const handleIncrement = () => {
-    if (qty < item.stock) {
+    if (isOutOfStock) {
+      setQty((prev) => prev + 1);
+    } else if (qty < item.stock) {
       setQty((prev) => prev + 1);
     }
   };
@@ -43,7 +46,6 @@ export const ProductCard: React.FC<ProductCardProps> = ({
   };
 
   const handleAdd = () => {
-    if (isOutOfStock) return;
     onAddToCart(item.productId, qty);
     setAdded(true);
     setTimeout(() => setAdded(false), 1500);
@@ -104,7 +106,8 @@ export const ProductCard: React.FC<ProductCardProps> = ({
             <div>
               {isOutOfStock ? (
                 <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold bg-rose-50 text-rose-700 border border-rose-200">
-                  Out of Stock
+                  <AlertCircle className="w-3 h-3" />
+                  0 Stock (Test Rollback)
                 </span>
               ) : isLowStock ? (
                 <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-bold bg-amber-50 text-amber-700 border border-amber-200 animate-pulse">
@@ -157,61 +160,57 @@ export const ProductCard: React.FC<ProductCardProps> = ({
 
           {/* Interactive Stepper & Add Button */}
           <div className="flex items-center gap-2">
-            {!isOutOfStock ? (
-              <>
-                <div className="flex items-center border border-slate-200 rounded-xl bg-slate-50 overflow-hidden shrink-0">
-                  <button
-                    type="button"
-                    onClick={handleDecrement}
-                    disabled={qty <= 1}
-                    className="p-2 hover:bg-slate-200 text-slate-600 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-                  >
-                    <Minus className="w-3.5 h-3.5" />
-                  </button>
-                  <span className="w-8 text-center text-xs font-bold text-slate-800 font-mono">
-                    {qty}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={handleIncrement}
-                    disabled={qty >= item.stock}
-                    className="p-2 hover:bg-slate-200 text-slate-600 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={handleAdd}
-                  className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl font-semibold text-xs transition-all shadow-sm active:scale-95 ${
-                    added
-                      ? 'bg-emerald-600 text-white shadow-emerald-200'
-                      : 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-indigo-100'
-                  }`}
-                >
-                  {added ? (
-                    <>
-                      <Check className="w-4 h-4" />
-                      <span>Added!</span>
-                    </>
-                  ) : (
-                    <>
-                      <ShoppingBag className="w-4 h-4" />
-                      <span>Add to Cart</span>
-                    </>
-                  )}
-                </button>
-              </>
-            ) : (
+            <div className="flex items-center border border-slate-200 rounded-xl bg-slate-50 overflow-hidden shrink-0">
               <button
                 type="button"
-                disabled
-                className="w-full py-2.5 px-3 rounded-xl bg-slate-100 text-slate-400 font-semibold text-xs cursor-not-allowed text-center"
+                onClick={handleDecrement}
+                disabled={qty <= 1}
+                className="p-2 hover:bg-slate-200 text-slate-600 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
               >
-                Out of Stock
+                <Minus className="w-3.5 h-3.5" />
               </button>
-            )}
+              <span className="w-8 text-center text-xs font-bold text-slate-800 font-mono">
+                {qty}
+              </span>
+              <button
+                type="button"
+                onClick={handleIncrement}
+                disabled={!isOutOfStock && qty >= item.stock}
+                className="p-2 hover:bg-slate-200 text-slate-600 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              >
+                <Plus className="w-3.5 h-3.5" />
+              </button>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleAdd}
+              className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl font-semibold text-xs transition-all shadow-sm active:scale-95 ${
+                added
+                  ? 'bg-emerald-600 text-white shadow-emerald-200'
+                  : isOutOfStock
+                  ? 'bg-amber-600 hover:bg-amber-700 text-white shadow-amber-100'
+                  : 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-indigo-100'
+              }`}
+              title={isOutOfStock ? 'Add out-of-stock item to cart to test all-or-nothing rollback' : 'Add to cart'}
+            >
+              {added ? (
+                <>
+                  <Check className="w-4 h-4" />
+                  <span>Added!</span>
+                </>
+              ) : isOutOfStock ? (
+                <>
+                  <ShoppingBag className="w-4 h-4" />
+                  <span>Add (Test Rollback)</span>
+                </>
+              ) : (
+                <>
+                  <ShoppingBag className="w-4 h-4" />
+                  <span>Add to Cart</span>
+                </>
+              )}
+            </button>
           </div>
         </div>
       </div>

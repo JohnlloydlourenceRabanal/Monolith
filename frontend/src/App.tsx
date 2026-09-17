@@ -115,10 +115,7 @@ export const App: React.FC = () => {
   // Cart Actions
   const handleAddToCart = (productId: string, quantity: number) => {
     const existing = inventory.find((i) => i.productId === productId);
-    if (!existing || existing.stock <= 0) {
-      addToast('Out of Stock', `Product ${productId} is currently out of stock.`, 'warning');
-      return;
-    }
+    if (!existing) return;
 
     setCart((prevCart) => {
       const alreadyInCart = prevCart.some((i) => i.productId === productId);
@@ -140,7 +137,15 @@ export const App: React.FC = () => {
       ];
     });
 
-    addToast('Added to Cart', `${quantity}x ${existing.name} added to your cart.`, 'success');
+    if (existing.stock <= 0) {
+      addToast(
+        'Added (0 Stock Item)',
+        `${quantity}x ${existing.name} (0 stock) added. Submitting will trigger atomic rollback!`,
+        'warning'
+      );
+    } else {
+      addToast('Added to Cart', `${quantity}x ${existing.name} added to your cart.`, 'success');
+    }
   };
 
   const handleUpdateCartQty = (productId: string, delta: number) => {
@@ -716,10 +721,13 @@ export const App: React.FC = () => {
                                 handleAddToCart(item.productId, 1);
                                 setIsCartOpen(true);
                               }}
-                              disabled={isZero}
-                              className="px-3 py-1.5 bg-slate-100 hover:bg-indigo-50 hover:text-indigo-600 disabled:opacity-40 disabled:cursor-not-allowed rounded-lg text-xs font-semibold transition-colors"
+                              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+                                isZero
+                                  ? 'bg-amber-50 text-amber-800 hover:bg-amber-100 border border-amber-200'
+                                  : 'bg-slate-100 hover:bg-indigo-50 hover:text-indigo-600'
+                              }`}
                             >
-                              Add 1 to Cart
+                              {isZero ? 'Add (Test Rollback)' : 'Add 1 to Cart'}
                             </button>
                           </td>
                         </tr>

@@ -37,7 +37,6 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
   const isLowStock = stock > 0 && stock < 5;
 
   const handleAdd = () => {
-    if (isOutOfStock) return;
     onAddToCart(meta.productId, qty);
     setAdded(true);
     setTimeout(() => {
@@ -152,51 +151,49 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
 
           {/* Stepper & Add to Cart */}
           <div className="mt-6 pt-4 border-t border-slate-100">
-            {!isOutOfStock ? (
-              <div className="flex items-center gap-3">
-                <div className="flex items-center border border-slate-200 rounded-xl bg-slate-50 overflow-hidden">
-                  <button
-                    type="button"
-                    onClick={() => setQty((prev) => Math.max(1, prev - 1))}
-                    disabled={qty <= 1}
-                    className="p-2 hover:bg-slate-200 text-slate-600 disabled:opacity-40"
-                  >
-                    <Minus className="w-4 h-4" />
-                  </button>
-                  <span className="w-10 text-center text-sm font-bold text-slate-800 font-mono">
-                    {qty}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => setQty((prev) => Math.min(stock, prev + 1))}
-                    disabled={qty >= stock}
-                    className="p-2 hover:bg-slate-200 text-slate-600 disabled:opacity-40"
-                  >
-                    <Plus className="w-4 h-4" />
-                  </button>
-                </div>
-
+            <div className="flex items-center gap-3">
+              <div className="flex items-center border border-slate-200 rounded-xl bg-slate-50 overflow-hidden">
                 <button
                   type="button"
-                  onClick={handleAdd}
-                  className={`flex-1 py-3 px-4 rounded-xl font-bold text-sm shadow-md flex items-center justify-center gap-2 transition-all ${
-                    added
-                      ? 'bg-emerald-600 text-white shadow-emerald-200'
-                      : 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-indigo-100 active:scale-95'
-                  }`}
+                  onClick={() => setQty((prev) => Math.max(1, prev - 1))}
+                  disabled={qty <= 1}
+                  className="p-2 hover:bg-slate-200 text-slate-600 disabled:opacity-40"
                 >
-                  <ShoppingBag className="w-4 h-4" />
-                  <span>{added ? 'Added to Cart!' : `Add ${qty} to Cart`}</span>
+                  <Minus className="w-4 h-4" />
+                </button>
+                <span className="w-10 text-center text-sm font-bold text-slate-800 font-mono">
+                  {qty}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setQty((prev) => (!isOutOfStock && stock > 0 ? Math.min(stock, prev + 1) : prev + 1))}
+                  className="p-2 hover:bg-slate-200 text-slate-600"
+                >
+                  <Plus className="w-4 h-4" />
                 </button>
               </div>
-            ) : (
+
               <button
-                disabled
-                className="w-full py-3 rounded-xl bg-slate-100 text-slate-400 font-bold text-xs cursor-not-allowed"
+                type="button"
+                onClick={handleAdd}
+                className={`flex-1 py-3 px-4 rounded-xl font-bold text-sm shadow-md flex items-center justify-center gap-2 transition-all ${
+                  added
+                    ? 'bg-emerald-600 text-white shadow-emerald-200'
+                    : isOutOfStock
+                    ? 'bg-amber-600 hover:bg-amber-700 text-white shadow-amber-100 active:scale-95'
+                    : 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-indigo-100 active:scale-95'
+                }`}
               >
-                Item Unavailable in Inventory
+                <ShoppingBag className="w-4 h-4" />
+                <span>
+                  {added
+                    ? 'Added to Cart!'
+                    : isOutOfStock
+                    ? `Add ${qty} to Cart (Test Rollback)`
+                    : `Add ${qty} to Cart`}
+                </span>
               </button>
-            )}
+            </div>
           </div>
         </div>
       </div>

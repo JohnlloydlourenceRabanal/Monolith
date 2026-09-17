@@ -67,7 +67,7 @@ export const PRODUCT_CATALOG_METADATA: Record<string, ProductMetadata> = {
       'Compact Aluminum Shell'
     ],
     description: 'Versatile multi-port USB-C adapter expanding connectivity for modern workstations.',
-    imageUrl: 'https://images.unsplash.com/photo-1625842268584-8f3296236761?w=600&auto=format&fit=crop&q=80'
+    imageUrl: '/images/usb_c_hub.jpg'
   }
 };
 
