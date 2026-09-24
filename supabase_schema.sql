@@ -40,7 +40,21 @@ CREATE TABLE notifications (
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
 );
 
--- 5. Seed initial inventory
+-- 5. Create supplier_orders table for Lab 3 Anti-Corruption Layer
+CREATE TABLE supplier_orders (
+    id BIGSERIAL PRIMARY KEY,
+    product_id VARCHAR(64) NOT NULL,
+    buyer_ref VARCHAR(40) NOT NULL UNIQUE,
+    request_id VARCHAR(80) NOT NULL UNIQUE,
+    po_number VARCHAR(64),
+    cases INT NOT NULL,
+    units INT NOT NULL,
+    status VARCHAR(32) NOT NULL, -- 'PENDING', 'SUBMITTED', 'PICKING', 'SHIPPED', 'DELIVERED', 'FAILED'
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+);
+
+-- 6. Seed initial inventory
 -- Requirements: P100 (Wireless Mouse) = 25, P200 (Mechanical Keyboard) = 10, P300 (USB-C Hub) = 0
 INSERT INTO inventory (product_id, name, stock) VALUES
     ('P100', 'Wireless Mouse', 25),

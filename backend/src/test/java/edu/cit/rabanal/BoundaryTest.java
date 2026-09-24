@@ -75,4 +75,68 @@ public class BoundaryTest {
 
         rule.check(importedClasses);
     }
+
+    @Test
+    @DisplayName("Supplier internal classes (XML, HTTP client, Session, Translators, Impl) MUST be package-private")
+    void supplierInternalClassesMustBePackagePrivate() throws Exception {
+        String[] pkgPrivateClassNames = {
+                "edu.cit.rabanal.supplier.SupplierGatewayImpl",
+                "edu.cit.rabanal.supplier.SupplierOrder",
+                "edu.cit.rabanal.supplier.LegacySupplyClient",
+                "edu.cit.rabanal.supplier.SessionManager",
+                "edu.cit.rabanal.supplier.SupplierTranslator",
+                "edu.cit.rabanal.supplier.AuthRequestXml",
+                "edu.cit.rabanal.supplier.AuthResponseXml",
+                "edu.cit.rabanal.supplier.PurchaseOrderXml",
+                "edu.cit.rabanal.supplier.PurchaseOrderAckXml",
+                "edu.cit.rabanal.supplier.PurchaseOrderStatusXml",
+                "edu.cit.rabanal.supplier.LSErrorXml"
+        };
+
+        for (String className : pkgPrivateClassNames) {
+            Class<?> clazz = Class.forName(className);
+            int modifiers = clazz.getModifiers();
+            assertThat(Modifier.isPublic(modifiers))
+                    .as("%s must NOT have the 'public' modifier", className)
+                    .isFalse();
+        }
+    }
+
+    @Test
+    @DisplayName("Shop and Inventory modules must NEVER import LegacySupply or supplier internal implementations")
+    void shopAndInventoryMustNotDependOnSupplierInternals() {
+        JavaClasses importedClasses = new ClassFileImporter().importPackages("edu.cit.rabanal");
+
+        ArchRule rule = noClasses()
+                .that().resideInAnyPackage("edu.cit.rabanal.shop..", "edu.cit.rabanal.inventory..")
+                .should().dependOnClassesThat()
+                .haveFullyQualifiedName("edu.cit.rabanal.supplier.SupplierGatewayImpl")
+                .orShould().dependOnClassesThat()
+                .haveFullyQualifiedName("edu.cit.rabanal.supplier.LegacySupplyClient")
+                .orShould().dependOnClassesThat()
+                .haveFullyQualifiedName("edu.cit.rabanal.supplier.SessionManager")
+                .orShould().dependOnClassesThat()
+                .haveFullyQualifiedName("edu.cit.rabanal.supplier.SupplierTranslator")
+                .orShould().dependOnClassesThat()
+                .haveFullyQualifiedName("edu.cit.rabanal.supplier.SupplierOrder")
+                .orShould().dependOnClassesThat()
+                .haveFullyQualifiedName("edu.cit.rabanal.supplier.SupplierOrderRepository")
+                .orShould().dependOnClassesThat()
+                .haveSimpleNameEndingWith("Xml");
+
+        rule.check(importedClasses);
+    }
+
+    @Test
+    @DisplayName("Shop module must NEVER depend on the Supplier module")
+    void shopModuleMustNotDependOnSupplier() {
+        JavaClasses importedClasses = new ClassFileImporter().importPackages("edu.cit.rabanal");
+
+        ArchRule rule = noClasses()
+                .that().resideInAPackage("edu.cit.rabanal.shop..")
+                .should().dependOnClassesThat()
+                .resideInAPackage("edu.cit.rabanal.supplier..");
+
+        rule.check(importedClasses);
+    }
 }

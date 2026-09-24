@@ -54,3 +54,17 @@ export interface CartItem {
   stock: number;
   category?: string;
 }
+
+export interface SupplierOrderSummary {
+  id: number;
+  productId: string;
+  buyerRef: string;
+  requestId: string;
+  poNumber: string | null;
+  cases: number;
+  units: number;
+  status: 'PENDING' | 'SUBMITTED' | 'PICKING' | 'SHIPPED' | 'DELIVERED' | 'CANCELLED' | 'FAILED';
+  createdAt: string;
+  updatedAt: string;
+}
+

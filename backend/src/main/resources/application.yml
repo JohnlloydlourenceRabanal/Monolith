@@ -21,6 +21,13 @@ spring:
       enabled: true
       path: /h2-console
 
+supplier:
+  base-url: ${LS_BASE_URL:https://legacysupply.onrender.com/api/v1}
+  client-id: ${LS_CLIENT_ID:21-0328-885}
+  api-key: ${LS_API_KEY:}
+  timeout-seconds: 3
+  max-retries: 3
+
 ---
 # Supabase Profile activated when SPRING_PROFILES_ACTIVE=supabase
 spring:
