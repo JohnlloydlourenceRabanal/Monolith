@@ -1,12 +1,49 @@
-# In-Process Modular Monolith: Order, Inventory & Notification System (Lab 2)
+# In-Process Modular Monolith: Order, Inventory, Notification & LegacySupply ACL (Lab 2 & Lab 3)
 
-A production-ready **In-Process Modular Monolith** implementing multi-item transactional checkout, order cancellation with automated restock, and in-monolith domain events. Built with **Java Spring Boot (Java 26 / 21)**, backed by **Supabase PostgreSQL (Cloud)**, and paired with a modern, responsive **React (Vite + TypeScript + Tailwind CSS)** frontend.
+A production-ready **In-Process Modular Monolith** implementing multi-item transactional checkout, order cancellation with automated restock, in-monolith domain events, and a resilient **Anti-Corruption Layer (ACL)** integrating with LegacySupply. Built with **Java Spring Boot (Java 26 / 21)**, backed by **Supabase PostgreSQL & H2**, and paired with a modern, responsive **React (Vite + TypeScript + Tailwind CSS)** operations dashboard.
 
 - **GitHub Repository**: [https://github.com/JohnlloydlourenceRabanal/Monolith](https://github.com/JohnlloydlourenceRabanal/Monolith)
 - **Base Package**: `edu.cit.rabanal`
   - `edu.cit.rabanal.shop` &mdash; Order Module
   - `edu.cit.rabanal.inventory` &mdash; Inventory Module
   - `edu.cit.rabanal.notification` &mdash; Notification Module (Domain Event Listener)
+  - `edu.cit.rabanal.supplier` &mdash; Anti-Corruption Layer (ACL) for LegacySupply
+
+---
+
+## 📦 Lab 3: Anti-Corruption Layer (ACL) & LegacySupply Integration
+
+- **Student Name:** John Lloyd Lourence C. Rabanal
+- **Student ID:** `21-0328-885`
+- **Base Package:** `edu.cit.rabanal.supplier`
+- **Submission Tag:** `lab3-final`
+- **Self-Check Verification:** [https://legacysupply.onrender.com/verify](https://legacysupply.onrender.com/verify)
+- **Detailed Reflection Document:** [`REFLECTION.md`](./REFLECTION.md)
+- **Integration & Discovery Document:** [`INTEGRATION.md`](./INTEGRATION.md)
+
+### 📋 Live Traffic Reflection Questions & Answers
+
+#### Question 1:
+> **LegacySupply holds more than one order for BuyerRef "RO-1": PO-100106 (20:21:05) and PO-100130 (20:25:59). Reconstruct the sequence of events that produced the duplicate, and describe the change you made (or would make) so it cannot happen again.**
+
+**Answer:**  
+When our initial reorder was submitted at 20:21:05, the `supplier_orders` table auto-generated primary key ID `1`, leading `SupplierGatewayImpl` to create `BuyerRef = "RO-1"` for `PO-100106`. After restarting our Spring Boot application, our in-memory H2 database sequence counter reset back to `1`. Consequently, when product P200 triggered an auto-reorder at 20:25:59, the entity was once again assigned ID `1` and formatted as `BuyerRef = "RO-1"` with a new `X-Request-Id` (`eb2c073b-7280-417c-9f6c-62f98b918d25`), creating `PO-100130`. To permanently eliminate duplicate references, we modified `SupplierGatewayImpl.java` to construct `BuyerRef` using the monotonic pattern `"RO-" + order.getId() + "-" + (System.currentTimeMillis() % 1000000)`. In enterprise production, this is further reinforced by a dedicated persistent database sequence (`supplier_order_buyer_ref_seq`) or UUID prefix ensuring strict uniqueness within the 40-character limit across all restarts.
+
+---
+
+#### Question 2:
+> **At 20:21:12 your request for BuyerRef "RO-2" (X-Request-Id bb77f0c9-e809-4ab5-89a4-3ffab0727ab1) received a 503, but LegacySupply had already created PO-100109. Walk through exactly what your adapter did next, and explain why that did or did not result in a second order.**
+
+**Answer:**  
+At 20:21:12, `LegacySupplyClient` submitted a purchase order for BuyerRef `RO-2` with `X-Request-Id` `bb77f0c9-e809-4ab5-89a4-3ffab0727ab1`, but LegacySupply returned an artificial HTTP 503 chaos error after internally persisting `PO-100109`. Our client caught the server exception within its exponential retry loop and waited 600 ms before re-transmitting the exact same XML payload. Crucially, the retry request carried the identical `X-Request-Id` header rather than generating a new one. Because of this idempotency key, LegacySupply recognized the incoming request as an `IDEMPOTENT_REPLAY` and returned HTTP 200 with the existing purchase order details rather than placing a duplicate. `SupplierGatewayImpl` then parsed `PurchaseOrderAckXml`, persisted `PO-100109` into our database, and safely completed replenishment without duplication.
+
+---
+
+#### Question 3:
+> **PO-100130 (BuyerRef "RO-1") ended with StatusCode 90, which is not in the documentation. How did you work out what it means, and what does your system now do with the stock that will never arrive?**
+
+**Answer:**  
+Although LegacySupply's manual only documents codes 10 through 40, standard supply chain conventions reserve status codes in the 90s for order cancellation or terminal rejection. We verified this deduction directly when our polling service fetched `PO-100130` and LegacySupply's self-check checklist updated the status to "Noticed a cancelled order: 1 cancelled orders seen". In response, `SupplierTranslator.mapStatusCode()` maps code `90` to our domain enum `SupplierOrderStatus.CANCELLED`. Because our Anti-Corruption Layer restocks warehouse inventory exclusively via `SupplierOrderDeliveredEvent` when status reaches `DELIVERED`, no delivery event was emitted, ensuring no phantom stock was credited to inventory. Our system logged an operational warning that delivery failed, allowing low-stock monitors to initiate a replacement reorder.
 
 ---
 
