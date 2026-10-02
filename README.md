@@ -467,6 +467,7 @@ $env:JAVA_HOME = "C:\Program Files\Java\jdk-26.0.2.1"
 - **Base Package:** `edu.cit.rabanal.channel`
 - **Online Marketplace:** Tiangge ([https://legacysupply.onrender.com/docs/tiangge](https://legacysupply.onrender.com/docs/tiangge))
 - **Submission Tag:** `lab4-final`
+<img width="542" height="850" alt="Screenshot 2026-10-02 210424" src="https://github.com/user-attachments/assets/8259664b-9ef1-4c3f-9a5a-756e8fbeacb3" />
 
 ### 📋 Live Traffic Reflection Questions & Answers (Marketplace)
 
