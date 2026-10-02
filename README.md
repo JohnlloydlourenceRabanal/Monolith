@@ -466,7 +466,43 @@ $env:JAVA_HOME = "C:\Program Files\Java\jdk-26.0.2.1"
 - **Student ID:** `21-0328-885`
 - **Base Package:** `edu.cit.rabanal.channel`
 - **Online Marketplace:** Tiangge ([https://legacysupply.onrender.com/docs/tiangge](https://legacysupply.onrender.com/docs/tiangge))
-- **Supplier Integration:** LegacySupply ([https://legacysupply.onrender.com/docs](https://legacysupply.onrender.com/docs))
+- **Submission Tag:** `lab4-final`
+
+### 📋 Live Traffic Reflection Questions & Answers (Marketplace)
+
+#### Question 1:
+> **Event evt_89f53effe5113727 (order TG-39EQ5D) reached your application twice, as seq 192 and seq 200, and you processed it once. Show the code and the stored data that made the second delivery harmless, and explain what would happen if your application restarted between the two.**
+
+**Answer:**  
+When order `TG-39EQ5D` was first processed at sequence 192, `ChannelGatewayImpl.handleOrderPlaced()` created a `ChannelOrder` entity and stored it in the relational `channel_orders` table with columns `tianggeOrderId = "TG-39EQ5D"`, `shopOrderId = 131`, `decision = "ACCEPTED"`, and the line items summary. The entity enforces a database `UNIQUE` constraint (`@Column(unique = true, nullable = false)`) on `tiangge_order_id`. When `evt_89f53effe5113727` arrived a second time at sequence 200, our code performed an idempotency lookup:
+```java
+var existingOpt = channelOrderRepository.findByTianggeOrderId(orderId);
+if (existingOpt.isPresent()) {
+    ChannelOrder existing = existingOpt.get();
+    log.info("[Channel] Duplicate order detected: Tiangge ID {} (Decision={})", orderId, existing.getDecision());
+    queueOrSendDecision(orderId, existing.getShopOrderId(), existing.getDecision(), existing.getReason());
+    return;
+}
+```
+Because the record already existed, the adapter re-sent the existing `ACCEPTED` decision (`SO-131`) and immediately returned without calling `orderService.placeOrder()` or reserving inventory again. If the application had restarted between sequence 192 and 200, the stored data in our persistent file-based H2 database (`./data/monolithdb.mv.db`) would remain completely intact; upon reboot, the app would query `channel_orders`, detect the existing order, and handle sequence 200 identically with zero duplicate processing.
+
+---
+
+#### Question 2:
+> **Order TG-WM63SN was backordered at 20:53:48 and accepted at 20:59:03, after PO-101868 was delivered at 20:58:48. Trace how the delivery reached your Inventory and what then resumed the backordered order.**
+
+**Answer:**  
+When order `TG-WM63SN` was received at 20:53:48 requesting 4 units of `P100` while stock was insufficient, `ChannelGatewayImpl` checked `hasOpenLegacySupplyPo("P100")` and detected that purchase order `PO-101868` was already in progress with LegacySupply, assigning a decision of `BACKORDERED` and persisting the order with `resolved = false`. At 20:58:48, our background scheduler polled LegacySupply's order status endpoint (`GET /api/v1/purchase-orders/PO-101868`) and detected status code 40 (`DELIVERED`). `SupplierGatewayImpl` then published an in-memory domain event `SupplierOrderDeliveredEvent("PO-101868", "P100", 24)`, which was received by `InventorySupplierDeliveryListener` to invoke `inventoryService.restock("P100", 24)`, updating warehouse stock from 0 to 24 units. Concurrently, `ChannelDeliveryEventListener` captured the delivery event and called `channelGateway.resolveBackorders()`. This queried all unresolved backorders in FIFO order, verified that `TG-WM63SN`'s required 4 units could now be fully reserved from stock, reserved the units atomically, marked the backorder as resolved with `resolutionStatus = "ACCEPTED"`, and transmitted `POST /tiangge/v1/orders/TG-WM63SN/resolution` with `{"status": "ACCEPTED"}` to Tiangge at 20:59:03 followed by the updated stock figure.
+
+---
+
+#### Question 3:
+> **During your restart test your application was down for about 118 seconds while 3 orders arrived. How did the restarted application find those orders, and how did it avoid handling earlier ones again?**
+
+**Answer:**  
+The application persists its position in the Tiangge event stream using the `channel_feed_cursor` database table managed by `ChannelFeedCursorRepository` in the persistent H2 database file (`./data/monolithdb.mv.db`). Before being shut down at 20:45:03, the app had advanced and committed its durable cursor to sequence 194. When the application restarted 118 seconds later at 20:47:01, `ChannelGatewayImpl.pollOrderFeed()` queried `getSavedCursor()` to retrieve sequence 194 and sent `GET /tiangge/v1/feed?after=194&limit=20` to the Tiangge server. By passing `after=194`, Tiangge returned only the events that occurred after sequence 194—specifically sequences 195, 196, and 197 (`TG-TWB6E4`, `TG-S67XAM`, and `TG-Z6HDTF`) that arrived during the 118-second downtime. Because the feed request explicitly began from sequence 194 rather than 0 or the beginning of time, all earlier orders were skipped by the server, ensuring none of the previously handled orders were ever re-read or processed again.
+
+---
 
 ### 🎯 Architecture & Boundary Rules
 1. **Public Interface Encapsulation**:
