@@ -1,6 +1,7 @@
 package edu.cit.rabanal.inventory;
 
 import edu.cit.rabanal.inventory.event.LowStockEvent;
+import edu.cit.rabanal.inventory.event.StockChangedEvent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
@@ -63,6 +64,7 @@ class InventoryServiceImpl implements InventoryService {
         // Deduct stock and persist
         item.setStock(item.getStock() - quantity);
         inventoryRepository.save(item);
+        eventPublisher.publishEvent(new StockChangedEvent(item.getProductId(), item.getStock()));
 
         log.info("[Reservation Confirmed] Reserved {} units of '{}'. Remaining stock: {}",
                 quantity, productId, item.getStock());
@@ -93,6 +95,7 @@ class InventoryServiceImpl implements InventoryService {
             InventoryItem item = itemOpt.get();
             item.setStock(item.getStock() + quantity);
             inventoryRepository.save(item);
+            eventPublisher.publishEvent(new StockChangedEvent(item.getProductId(), item.getStock()));
             log.info("[Restock] Restocked {} units for '{}'. New stock: {}", quantity, productId, item.getStock());
         }
     }
@@ -117,6 +120,9 @@ class InventoryServiceImpl implements InventoryService {
             }
         }
         inventoryRepository.saveAll(items);
+        for (InventoryItem item : items) {
+            eventPublisher.publishEvent(new StockChangedEvent(item.getProductId(), item.getStock()));
+        }
         log.info("[Restock All] Stocks reset: P100 (Mouse)=25, P200 (Keyboard)=10, P300 (USB)=0");
     }
 }

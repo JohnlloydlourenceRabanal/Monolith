@@ -12,35 +12,51 @@ import {
   Send,
   Clock,
   ArrowRight,
-  Key,
   ShieldCheck,
-  ExternalLink
+  Radio,
 } from 'lucide-react';
 import { api } from './services/api';
+import { ProductCard } from './components/ProductCard';
+import { ProductDetailModal } from './components/ProductDetailModal';
+import { CartDrawer } from './components/CartDrawer';
+import { CheckoutSuccessModal } from './components/CheckoutSuccessModal';
+import { ChannelStatus } from './components/ChannelStatus';
+import { ProductMetadata } from './data/productData';
 import {
   InventoryItem,
   OrderResponse,
   OrderRecord,
   NotificationRecord,
   SupplierOrderSummary,
+  CartItem,
 } from './types';
 
 export const App: React.FC = () => {
-  // State
-  const [inventory, setInventory] = useState<InventoryItem[]>([]);
+  // State: Initialize with the 3 catalog products so UI is never empty
+  const [inventory, setInventory] = useState<InventoryItem[]>([
+    { productId: 'P100', name: 'Wireless Mouse', stock: 25 },
+    { productId: 'P200', name: 'Mechanical Keyboard', stock: 10 },
+    { productId: 'P300', name: 'USB-C Hub', stock: 0 },
+  ]);
   const [orders, setOrders] = useState<OrderRecord[]>([]);
   const [supplierOrders, setSupplierOrders] = useState<SupplierOrderSummary[]>([]);
   const [notifications, setNotifications] = useState<NotificationRecord[]>([]);
-  const [activeTab, setActiveTab] = useState<'inventory' | 'orders' | 'supplier' | 'activity'>('inventory');
+  const [activeTab, setActiveTab] = useState<'products' | 'inventory' | 'orders' | 'supplier' | 'channel' | 'activity'>('products');
+
+  // Cart & Product Selection State
+  const [cart, setCart] = useState<CartItem[]>([]);
+  const [isCartOpen, setIsCartOpen] = useState<boolean>(false);
+  const [isSubmittingCart, setIsSubmittingCart] = useState<boolean>(false);
+  const [selectedProductMeta, setSelectedProductMeta] = useState<ProductMetadata | null>(null);
+  const [selectedProductStock, setSelectedProductStock] = useState<number>(0);
+  const [isDetailModalOpen, setIsDetailModalOpen] = useState<boolean>(false);
+  const [isSuccessModalOpen, setIsSuccessModalOpen] = useState<boolean>(false);
 
   // Supplier API Key State
   const [supplierConfig, setSupplierConfig] = useState<{ clientId: string; hasApiKey: boolean }>({
     clientId: '21-0328-885',
     hasApiKey: false,
   });
-  const [apiKeyInput, setApiKeyInput] = useState<string>('');
-  const [isSavingKey, setIsSavingKey] = useState<boolean>(false);
-  const [showKeyForm, setShowKeyForm] = useState<boolean>(false);
 
   // Order Placement Form
   const [selectedProduct, setSelectedProduct] = useState<string>('P100');
@@ -49,7 +65,6 @@ export const App: React.FC = () => {
 
   // Loading States
   const [isLoading, setIsLoading] = useState<boolean>(false);
-  const [isPollingSupplier, setIsPollingSupplier] = useState<boolean>(false);
   const [statusMessage, setStatusMessage] = useState<{ text: string; type: 'success' | 'error' | 'info' } | null>(null);
 
   const showStatus = (text: string, type: 'success' | 'error' | 'info' = 'info') => {
@@ -60,38 +75,32 @@ export const App: React.FC = () => {
   const loadData = useCallback(async () => {
     try {
       const [invData, orderData, suppData, notifData, configData] = await Promise.all([
-        api.getInventory(),
-        api.getOrders(),
+        api.getInventory().catch((e) => {
+          console.error('getInventory failed:', e);
+          return null;
+        }),
+        api.getOrders().catch((e) => {
+          console.error('getOrders failed:', e);
+          return [];
+        }),
         api.getSupplierOrders().catch(() => []),
-        api.getNotifications(),
+        api.getNotifications().catch((e) => {
+          console.error('getNotifications failed:', e);
+          return [];
+        }),
         api.getSupplierConfig().catch(() => ({ clientId: '21-0328-885', hasApiKey: false })),
       ]);
-      setInventory(invData);
-      setOrders(orderData);
-      setSupplierOrders(suppData);
-      setNotifications(notifData);
+      if (invData && Array.isArray(invData) && invData.length > 0) {
+        setInventory(invData);
+      }
+      if (orderData) setOrders(orderData);
+      if (suppData) setSupplierOrders(suppData);
+      if (notifData) setNotifications(notifData);
       if (configData) setSupplierConfig(configData);
     } catch (err) {
       console.error('Failed to load monolith data:', err);
     }
   }, []);
-
-  const handleSaveApiKey = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!apiKeyInput.trim()) return;
-    setIsSavingKey(true);
-    try {
-      await api.setSupplierApiKey(apiKeyInput.trim());
-      showStatus('LegacySupply API key saved! Catalog synchronized and pending orders dispatched.', 'success');
-      setApiKeyInput('');
-      setShowKeyForm(false);
-      await loadData();
-    } catch (err: any) {
-      showStatus(`Failed to connect LegacySupply: ${err.message}`, 'error');
-    } finally {
-      setIsSavingKey(false);
-    }
-  };
 
   useEffect(() => {
     loadData();
@@ -104,6 +113,82 @@ export const App: React.FC = () => {
     await loadData();
     setIsLoading(false);
     showStatus('Data synchronized with Monolith backend', 'info');
+  };
+
+  const handleAddToCart = (productId: string, qty: number) => {
+    const item = inventory.find((i) => i.productId === productId);
+    if (!item) return;
+
+    setCart((prev) => {
+      const existing = prev.find((c) => c.productId === productId);
+      if (existing) {
+        return prev.map((c) =>
+          c.productId === productId ? { ...c, quantity: c.quantity + qty } : c
+        );
+      }
+      return [
+        ...prev,
+        {
+          productId: item.productId,
+          name: item.name,
+          quantity: qty,
+          stock: item.stock,
+        },
+      ];
+    });
+    showStatus(`Added ${qty}x ${item.name} to cart`, 'info');
+  };
+
+  const handleUpdateCartQuantity = (productId: string, delta: number) => {
+    setCart((prev) =>
+      prev
+        .map((item) => {
+          if (item.productId === productId) {
+            const newQty = item.quantity + delta;
+            return newQty > 0 ? { ...item, quantity: newQty } : null;
+          }
+          return item;
+        })
+        .filter(Boolean) as CartItem[]
+    );
+  };
+
+  const handleRemoveFromCart = (productId: string) => {
+    setCart((prev) => prev.filter((item) => item.productId !== productId));
+  };
+
+  const handleClearCart = () => {
+    setCart([]);
+  };
+
+  const handleSubmitCartOrder = async () => {
+    if (cart.length === 0) return;
+    setIsSubmittingCart(true);
+    try {
+      const res = await api.placeOrder({
+        items: cart.map((c) => ({ productId: c.productId, quantity: c.quantity })),
+      });
+      setOrderResult(res);
+      setIsSuccessModalOpen(true);
+      setCart([]);
+      setIsCartOpen(false);
+      await loadData();
+      if (res.status === 'CONFIRMED') {
+        showStatus(`Order #${res.orderId} Confirmed! Stock reserved.`, 'success');
+      } else {
+        showStatus(`Order Rejected: ${res.reason || 'Insufficient stock'}`, 'error');
+      }
+    } catch (err: any) {
+      showStatus(`Cart checkout failed: ${err.message}`, 'error');
+    } finally {
+      setIsSubmittingCart(false);
+    }
+  };
+
+  const handleQuickView = (meta: ProductMetadata, stock: number) => {
+    setSelectedProductMeta(meta);
+    setSelectedProductStock(stock);
+    setIsDetailModalOpen(true);
   };
 
   const handlePlaceOrder = async (e?: React.FormEvent) => {
@@ -156,19 +241,6 @@ export const App: React.FC = () => {
     }
   };
 
-  const handlePollSupplier = async () => {
-    setIsPollingSupplier(true);
-    try {
-      await api.pollSupplierOrders();
-      await loadData();
-      showStatus('Supplier status check executed. Orders updated.', 'success');
-    } catch (err: any) {
-      showStatus(`Supplier poll failed: ${err.message}`, 'error');
-    } finally {
-      setIsPollingSupplier(false);
-    }
-  };
-
   const lowStockCount = inventory.filter((i) => i.stock < 5).length;
 
   return (
@@ -190,6 +262,19 @@ export const App: React.FC = () => {
 
           <div className="flex items-center gap-2">
             <button
+              onClick={() => setIsCartOpen(true)}
+              className="relative inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-xs font-semibold text-white shadow-sm transition-all active:scale-95"
+            >
+              <ShoppingBag className="w-3.5 h-3.5" />
+              <span>Cart</span>
+              {cart.reduce((sum, item) => sum + item.quantity, 0) > 0 && (
+                <span className="bg-white text-indigo-700 text-[10px] font-bold px-1.5 py-0.2 rounded-full min-w-[18px] text-center">
+                  {cart.reduce((sum, item) => sum + item.quantity, 0)}
+                </span>
+              )}
+            </button>
+
+            <button
               onClick={handleManualSync}
               disabled={isLoading}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-medium text-slate-200 transition-colors border border-slate-700 disabled:opacity-50"
@@ -202,6 +287,18 @@ export const App: React.FC = () => {
 
         {/* Tab Controls */}
         <div className="max-w-6xl mx-auto px-4 flex gap-1 border-t border-slate-800 overflow-x-auto text-xs sm:text-sm">
+          <button
+            onClick={() => setActiveTab('products')}
+            className={`flex items-center gap-2 py-2.5 px-3 font-medium border-b-2 transition-colors ${
+              activeTab === 'products'
+                ? 'border-indigo-400 text-white font-bold'
+                : 'border-transparent text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <ShoppingBag className="w-4 h-4 text-indigo-400" />
+            <span>Products (3 Items)</span>
+          </button>
+
           <button
             onClick={() => setActiveTab('inventory')}
             className={`flex items-center gap-2 py-2.5 px-3 font-medium border-b-2 transition-colors ${
@@ -254,6 +351,18 @@ export const App: React.FC = () => {
           </button>
 
           <button
+            onClick={() => setActiveTab('channel')}
+            className={`flex items-center gap-2 py-2.5 px-3 font-medium border-b-2 transition-colors ${
+              activeTab === 'channel'
+                ? 'border-indigo-400 text-white'
+                : 'border-transparent text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <Radio className="w-4 h-4" />
+            <span>Channel Status</span>
+          </button>
+
+          <button
             onClick={() => setActiveTab('activity')}
             className={`flex items-center gap-2 py-2.5 px-3 font-medium border-b-2 transition-colors ${
               activeTab === 'activity'
@@ -294,6 +403,62 @@ export const App: React.FC = () => {
 
       {/* Main Content View */}
       <main className="max-w-6xl mx-auto px-4 py-6 flex-1 w-full space-y-6">
+        {/* TAB 0: SELECTION OF PRODUCTS (STOREFRONT) */}
+        {activeTab === 'products' && (
+          <div className="space-y-6">
+            {/* Header & Quick Scenarios */}
+            <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div>
+                <div className="flex items-center gap-2">
+                  <ShoppingBag className="w-5 h-5 text-indigo-600" />
+                  <h2 className="text-base font-bold text-slate-900">
+                    Product Selection &amp; Storefront
+                  </h2>
+                </div>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Browse products, inspect specifications, and select quantities. Stock is reserved atomically in-process.
+                </p>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2 text-xs">
+                <span className="text-slate-400 font-medium">Quick Test:</span>
+                <button
+                  onClick={() => {
+                    handleAddToCart('P100', 1);
+                    handleAddToCart('P200', 1);
+                    setIsCartOpen(true);
+                  }}
+                  className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg border border-slate-200 font-medium"
+                >
+                  Multi-Item (Mouse + Keyboard)
+                </button>
+                <button
+                  onClick={() => {
+                    handleAddToCart('P100', 1);
+                    handleAddToCart('P300', 1);
+                    setIsCartOpen(true);
+                  }}
+                  className="px-2.5 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-lg border border-rose-200 font-medium"
+                >
+                  Test Rollback (P300 Out of Stock)
+                </button>
+              </div>
+            </div>
+
+            {/* 3 Products Grid */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              {inventory.map((item) => (
+                <ProductCard
+                  key={item.productId}
+                  item={item}
+                  onAddToCart={handleAddToCart}
+                  onQuickView={handleQuickView}
+                />
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* TAB 1: INVENTORY */}
         {activeTab === 'inventory' && (
           <div className="space-y-4">
@@ -388,12 +553,48 @@ export const App: React.FC = () => {
               </div>
 
               <form onSubmit={handlePlaceOrder} className="space-y-3">
+                {/* 3 Interactive Product Selection Cards */}
                 <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">Select Product</label>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                    Select Product (Click to Choose)
+                  </label>
+                  <div className="grid grid-cols-3 gap-2 mb-2">
+                    {inventory.map((i) => {
+                      const isSelected = selectedProduct === i.productId;
+                      const isOut = i.stock === 0;
+                      return (
+                        <button
+                          key={i.productId}
+                          type="button"
+                          onClick={() => {
+                            setSelectedProduct(i.productId);
+                            setQuantity(1);
+                          }}
+                          className={`p-2.5 rounded-xl border text-left transition-all ${
+                            isSelected
+                              ? 'border-indigo-600 bg-indigo-50/80 ring-2 ring-indigo-500/20'
+                              : 'border-slate-200 hover:border-slate-300 bg-white'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="font-mono font-bold text-xs text-indigo-700">{i.productId}</span>
+                            <span className={`text-[10px] font-semibold px-1.5 py-0.2 rounded ${
+                              isOut ? 'bg-rose-100 text-rose-700' : i.stock < 5 ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'
+                            }`}>
+                              {i.stock} left
+                            </span>
+                          </div>
+                          <div className="text-xs font-semibold text-slate-800 truncate" title={i.name}>
+                            {i.name}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
                   <select
                     value={selectedProduct}
                     onChange={(e) => setSelectedProduct(e.target.value)}
-                    className="w-full text-xs sm:text-sm p-2 bg-slate-50 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                    className="w-full text-xs p-1.5 bg-slate-50 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-slate-600"
                   >
                     {inventory.map((i) => (
                       <option key={i.productId} value={i.productId}>
@@ -554,7 +755,7 @@ export const App: React.FC = () => {
         {/* TAB 3: SUPPLIER REORDERS (ACL) */}
         {activeTab === 'supplier' && (
           <div className="space-y-4">
-            {/* LegacySupply Connection Card */}
+            {/* LegacySupply Connection Card (Read-only status) */}
             <div className={`p-4 rounded-xl border transition-all ${
               supplierConfig.hasApiKey 
                 ? 'bg-emerald-50/70 border-emerald-200' 
@@ -563,69 +764,28 @@ export const App: React.FC = () => {
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="flex items-center gap-3">
                   <div className={`p-2 rounded-lg ${supplierConfig.hasApiKey ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
-                    {supplierConfig.hasApiKey ? <ShieldCheck className="w-5 h-5" /> : <Key className="w-5 h-5" />}
+                    <ShieldCheck className="w-5 h-5" />
                   </div>
                   <div>
                     <div className="flex items-center gap-2">
                       <h3 className="text-xs sm:text-sm font-bold text-slate-800">
-                        {supplierConfig.hasApiKey ? 'LegacySupply Service: Connected & Active' : 'LegacySupply API Key Required'}
+                        {supplierConfig.hasApiKey ? 'LegacySupply Anti-Corruption Layer: Active & Connected' : 'LegacySupply API Connection: Pending Environment Key'}
                       </h3>
                       <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase ${
                         supplierConfig.hasApiKey ? 'bg-emerald-200 text-emerald-900' : 'bg-amber-200 text-amber-900'
                       }`}>
-                        {supplierConfig.hasApiKey ? 'Authenticated' : 'Offline / Pending'}
+                        {supplierConfig.hasApiKey ? 'Authenticated (ENV)' : 'Offline / Pending'}
                       </span>
                     </div>
                     <p className="text-[11px] text-slate-600 mt-0.5">
-                      Client ID: <span className="font-mono font-semibold text-slate-900">21-0328-885</span> •{' '}
+                      Client ID: <span className="font-mono font-semibold text-slate-900">{supplierConfig.clientId || '21-0328-885'}</span> •{' '}
                       {supplierConfig.hasApiKey
-                        ? 'Token auto-refreshed on 401. Pending orders auto-dispatched.'
-                        : 'Reorders are buffered as PENDING until API key is connected.'}
+                        ? 'Authenticated via LEGACY_API_KEY. Autonomous XML session management, catalog sync, and delivery tracking active.'
+                        : 'Reorders are buffered until the LEGACY_API_KEY environment variable is configured.'}
                     </p>
                   </div>
                 </div>
-
-                <div className="flex items-center gap-2">
-                  <a
-                    href="https://legacysupply.onrender.com/key"
-                    target="_blank"
-                    rel="noreferrer"
-                    className="inline-flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-800 font-medium hover:underline mr-2"
-                  >
-                    <span>Get Key</span>
-                    <ExternalLink className="w-3 h-3" />
-                  </a>
-                  <button
-                    type="button"
-                    onClick={() => setShowKeyForm(!showKeyForm)}
-                    className="px-3 py-1.5 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-700 shadow-sm"
-                  >
-                    {supplierConfig.hasApiKey ? (showKeyForm ? 'Hide' : 'Update Key') : (showKeyForm ? 'Close Form' : 'Enter API Key')}
-                  </button>
-                </div>
               </div>
-
-              {(!supplierConfig.hasApiKey || showKeyForm) && (
-                <form onSubmit={handleSaveApiKey} className="mt-3 pt-3 border-t border-slate-200/80 flex flex-wrap sm:flex-nowrap gap-2 items-center">
-                  <div className="relative flex-1">
-                    <Key className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                    <input
-                      type="password"
-                      value={apiKeyInput}
-                      onChange={(e) => setApiKeyInput(e.target.value)}
-                      placeholder="Paste your LegacySupply API key (LSK-...)"
-                      className="w-full text-xs py-1.5 pl-8 pr-3 bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 font-mono"
-                    />
-                  </div>
-                  <button
-                    type="submit"
-                    disabled={isSavingKey || !apiKeyInput.trim()}
-                    className="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-lg shadow-sm disabled:opacity-50 transition-colors whitespace-nowrap"
-                  >
-                    {isSavingKey ? 'Connecting...' : 'Save & Dispatch Backlog'}
-                  </button>
-                </form>
-              )}
             </div>
 
             <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm space-y-4">
@@ -641,15 +801,6 @@ export const App: React.FC = () => {
                     Orders placed with LegacySupply (`supplier_orders` table). Units are rounded up to whole cases/packs.
                   </p>
                 </div>
-
-                <button
-                  onClick={handlePollSupplier}
-                  disabled={isPollingSupplier}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-medium transition-colors shadow-sm disabled:opacity-50"
-                >
-                  <RefreshCw className={`w-3.5 h-3.5 ${isPollingSupplier ? 'animate-spin' : ''}`} />
-                  <span>Check Delivery Status</span>
-                </button>
               </div>
 
               {supplierOrders.length === 0 ? (
@@ -730,7 +881,10 @@ export const App: React.FC = () => {
           </div>
         )}
 
-        {/* TAB 4: ACTIVITY FEED */}
+        {/* TAB 4: CHANNEL STATUS */}
+        {activeTab === 'channel' && <ChannelStatus />}
+
+        {/* TAB 5: ACTIVITY FEED */}
         {activeTab === 'activity' && (
           <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm space-y-3">
             <div className="flex items-center justify-between mb-2">
@@ -791,6 +945,37 @@ export const App: React.FC = () => {
       <footer className="bg-white border-t border-slate-200 py-3 text-center text-xs text-slate-500">
         <p>Rabanal Monolith &bull; Anti-Corruption Layer &bull; Systems Integration &amp; Architecture</p>
       </footer>
+
+      {/* Cart & Product Modals */}
+      <CartDrawer
+        isOpen={isCartOpen}
+        onClose={() => setIsCartOpen(false)}
+        cart={cart}
+        inventory={inventory}
+        onUpdateQuantity={handleUpdateCartQuantity}
+        onRemoveItem={handleRemoveFromCart}
+        onClearCart={handleClearCart}
+        onSubmitOrder={handleSubmitCartOrder}
+        isSubmitting={isSubmittingCart}
+      />
+
+      <ProductDetailModal
+        meta={selectedProductMeta}
+        stock={selectedProductStock}
+        isOpen={isDetailModalOpen}
+        onClose={() => setIsDetailModalOpen(false)}
+        onAddToCart={handleAddToCart}
+      />
+
+      <CheckoutSuccessModal
+        result={orderResult}
+        isOpen={isSuccessModalOpen}
+        onClose={() => setIsSuccessModalOpen(false)}
+        onViewOrders={() => {
+          setIsSuccessModalOpen(false);
+          setActiveTab('orders');
+        }}
+      />
     </div>
   );
 };

@@ -1,6 +1,6 @@
-# In-Process Modular Monolith: Order, Inventory, Notification & LegacySupply ACL (Lab 2 & Lab 3)
+# In-Process Modular Monolith: Order, Inventory, Notification, LegacySupply ACL & Tiangge Marketplace Channel (Labs 2, 3, & 4)
 
-A production-ready **In-Process Modular Monolith** implementing multi-item transactional checkout, order cancellation with automated restock, in-monolith domain events, and a resilient **Anti-Corruption Layer (ACL)** integrating with LegacySupply. Built with **Java Spring Boot (Java 26 / 21)**, backed by **Supabase PostgreSQL & H2**, and paired with a modern, responsive **React (Vite + TypeScript + Tailwind CSS)** operations dashboard.
+A production-ready **In-Process Modular Monolith** implementing multi-item transactional checkout, order cancellation with automated restock, in-monolith domain events, a resilient **Anti-Corruption Layer (ACL)** integrating with LegacySupply, and an autonomous **Marketplace Channel Adapter** integrating with Tiangge. Built with **Java Spring Boot (Java 26 / 21)**, backed by **Supabase PostgreSQL & H2**, and paired with a modern, responsive **React (Vite + TypeScript + Tailwind CSS)** operations dashboard.
 
 - **GitHub Repository**: [https://github.com/JohnlloydlourenceRabanal/Monolith](https://github.com/JohnlloydlourenceRabanal/Monolith)
 - **Base Package**: `edu.cit.rabanal`
@@ -8,6 +8,7 @@ A production-ready **In-Process Modular Monolith** implementing multi-item trans
   - `edu.cit.rabanal.inventory` &mdash; Inventory Module
   - `edu.cit.rabanal.notification` &mdash; Notification Module (Domain Event Listener)
   - `edu.cit.rabanal.supplier` &mdash; Anti-Corruption Layer (ACL) for LegacySupply
+  - `edu.cit.rabanal.channel` &mdash; Marketplace Channel Module for Tiangge
 
 ---
 
@@ -429,15 +430,96 @@ $env:JAVA_HOME = "C:\Program Files\Java\jdk-26.0.2.1"
 .\mvnw.cmd test
 ```
 
-### Verified Test Results (9 / 9 Passing):
-- **`BoundaryTest`**:
+### Verified Test Results (24 / 24 Passing):
+- **`BoundaryTest`** (ArchUnit Architectural Invariants):
   - `inventoryServiceImplMustBePackagePrivate`: Enforces default visibility on `InventoryServiceImpl`. [PASSED]
   - `shopModuleMustNotDependOnInventoryServiceImpl`: ArchUnit rule verifying zero direct references from `shop` to `InventoryServiceImpl`. [PASSED]
   - `notificationModuleMustNotDependOnServicesOrRepositories`: ArchUnit rule verifying `notification` never references order/inventory services. [PASSED]
   - `shopAndInventoryMustNotDependOnNotification`: ArchUnit rule verifying zero imports of `notification` from `shop` or `inventory`. [PASSED]
+  - `supplierInternalClassesMustBePackagePrivate`: Enforces default package-private visibility on all LegacySupply XML DTOs, HTTP clients, and translators. [PASSED]
+  - `shopAndInventoryMustNotDependOnSupplierInternals`: ArchUnit rule enforcing ACL isolation. [PASSED]
+  - `shopModuleMustNotDependOnSupplier`: ArchUnit rule enforcing zero supplier references from shop. [PASSED]
+  - `shopAndInventoryMustNotDependOnChannel`: ArchUnit rule verifying zero references from shop/inventory to channel/tiangge. [PASSED]
+  - `channelInternalClassesMustBePackagePrivate`: Enforces package-private visibility on all Channel DTOs, schedulers, clients, and controllers. [PASSED]
+  - `channelGatewayMustBePublicInterface`: Verifies `ChannelGateway` is the only public interface in `channel`. [PASSED]
 - **`OrderServiceIntegrationTest`**:
   - `shouldConfirmMultiItemOrderWhenAllItemsAvailable`: Multi-item atomic order confirmation and stock decrement. [PASSED]
   - `shouldRejectMultiItemOrderWithZeroPartialReservationWhenOneItemFails`: All-or-nothing rollback with 0 stock reserved. [PASSED]
   - `shouldCancelConfirmedOrderAndReturnStock`: Cancellation and stock restoration. [PASSED]
   - `shouldRejectCancellationOfAlreadyCancelledOrRejectedOrders`: Rejection of duplicate or invalid cancellations. [PASSED]
   - `shouldTriggerLowStockAlertWhenStockDropsBelowThreshold`: Low-stock auto-reorder domain event publication and notification record. [PASSED]
+- **`SupplierGatewayIntegrationTest`**:
+  - Full round-trip integration tests verifying XML translation, LegacySupply session authentication, and purchase order tracking. [PASSED]
+- **`ChannelInternalTest`**:
+  - `cursorPersistedDurably`: Tests durable database cursor updates and retrieval. [PASSED]
+  - `uniqueConstraintOnTianggeOrderId`: Verifies database unique constraint and duplicate order rejection. [PASSED]
+  - `translatorMapsCatalogSkus`: Verifies shop SKU to supplier SKU translation. [PASSED]
+  - `outboxTaskPersistenceAndQuery`: Tests outbox task persistence, pending queries, and retry handling. [PASSED]
+  - `backorderLifecycleTracking`: Tests backorder creation, waiting status, and replenishment resolution. [PASSED]
+  - `channelStatusTelemetry`: Verifies channel status telemetry and order DTO mapping for the React UI. [PASSED]
+
+---
+
+## 🛒 Lab 4: Tiangge Marketplace Channel Integration (`edu.cit.rabanal.channel`)
+
+- **Student Name:** John Lloyd Lourence C. Rabanal
+- **Student ID:** `21-0328-885`
+- **Base Package:** `edu.cit.rabanal.channel`
+- **Online Marketplace:** Tiangge ([https://legacysupply.onrender.com/docs/tiangge](https://legacysupply.onrender.com/docs/tiangge))
+- **Supplier Integration:** LegacySupply ([https://legacysupply.onrender.com/docs](https://legacysupply.onrender.com/docs))
+
+### 🎯 Architecture & Boundary Rules
+1. **Public Interface Encapsulation**:
+   - `ChannelGateway` is the **only public interface** in `edu.cit.rabanal.channel`.
+   - All internal classes (`ChannelGatewayImpl`, `TianggeClient`, `ChannelTranslator`, `ClientInstanceInterceptor`, `ChannelHeartbeatScheduler`, `ChannelFeedPollerScheduler`, `ChannelOutboxScheduler`, `ChannelDeliveryEventListener`, `InventoryStockEventListener`, `ChannelController`, DTOs, entities, repositories) are strictly **package-private**.
+   - Verified by **ArchUnit** boundary tests (`BoundaryTest.java`).
+2. **Zero Inward Leaks**:
+   - The `shop` and `inventory` modules have **zero knowledge** of the `channel` module or Tiangge marketplace.
+   - Decoupled via in-memory domain events (`StockChangedEvent`, `OrderPlacedEvent`, `OrderCancelledEvent`, `SupplierOrderDeliveredEvent`).
+
+---
+
+### 📋 Task 1–6 Mapping & Implementation Checklist
+
+| Task | Requirement | Implementation Details | Verified |
+| :--- | :--- | :--- | :---: |
+| **Task 1: Go live** | UUID instance ID generated on startup | `ClientInstanceInterceptor` generates a random UUID on startup, injecting `X-Client-Instance: <uuid>` on every outgoing request to Tiangge and LegacySupply. | ✅ |
+| | 30s Heartbeat | `ChannelHeartbeatScheduler` executes every 30 seconds (`POST /instances/heartbeat`). | ✅ |
+| | Listings Published | On startup runner, publishes shop product catalog (`PUT /listings`) with seller SKUs (`P100`, `P200`, `P300`). | ✅ |
+| | Stock Published | On startup and event hooks, sends available stock figures (`PUT /stock`). | ✅ |
+| | Event-Driven Stock Sync | `InventoryStockEventListener` catches `StockChangedEvent`, `OrderPlacedEvent`, `OrderCancelledEvent`, and `SupplierOrderDeliveredEvent` to publish updated stock immediately without polling. | ✅ |
+| **Task 2: Order feed** | Poll order feed every few seconds | `ChannelFeedPollerScheduler` polls `GET /feed?after={cursor}&limit=20` every 3 seconds. | ✅ |
+| | Sequential Processing | Processes batch items sequentially protected by `feedPollLock` to prevent race conditions or overselling during flash-sale bursts. | ✅ |
+| | All-or-Nothing Reservation | Calls `OrderService.placeOrder()` to reserve all line items atomically. | ✅ |
+| | Durable Cursor Tracking | `channel_feed_cursor` persists the latest sequence number in the database; advanced only after successful processing and persisted across restarts. | ✅ |
+| **Task 3: Decisions & Deduplication** | Decision within 60s | Reports decision via `POST /orders/{orderId}/decision`: `ACCEPTED` (fully reserved), `BACKORDERED` (stock short but open LegacySupply PO on the way), or `REJECTED` (stock short with no restock coming). | ✅ |
+| | Deduplication | `channel_orders` table enforces a database `UNIQUE` constraint on `tiangge_order_id`. Duplicate incoming orders replay the existing decision without creating duplicate shop orders. | ✅ |
+| **Task 4: Cancellations** | Feed cancellations handled | When an order cancellation arrives on the feed, `OrderService.cancelOrder()` is called to restore stock. | ✅ |
+| | Restock & Stock Sync | Cancellation domain event triggers an immediate stock update to Tiangge. | ✅ |
+| | Confirm Cancellation | Confirms cancellation within 60s via `POST /orders/{orderId}/cancellation-confirm`. | ✅ |
+| **Task 5: Restock Loop** | Auto-Reorder with Supplier | Lab 3 auto-reorder automatically triggers purchase orders to LegacySupply when stock is low. | ✅ |
+| | Backorder Resolution | When a delivery arrives, `SupplierOrderDeliveredEvent` triggers `ChannelDeliveryEventListener` (ordered after inventory restock), reserving stock for waiting backorders (FIFO) and reporting `ACCEPTED` (or `CANCELLED` if unobtainable) via `POST /orders/{orderId}/resolution`. | ✅ |
+| **Task 6: Resilience & UI** | Network Timeouts | All clients configure connect and read timeouts (5000 ms). | ✅ |
+| | Retry with Backoff & `Retry-After` | Exponential backoff on 5xx, 429, and timeouts, automatically parsing and sleeping for `Retry-After` seconds when present. | ✅ |
+| | Transactional Outbox | Unconfirmed decisions, stock updates, resolutions, and cancellations are saved to `channel_outbox` and retried by `ChannelOutboxScheduler` every 5 seconds. | ✅ |
+| | "Channel Status" React UI | Added a dedicated, read-only "Channel Status" tab to the React dashboard showing: live heartbeat status, instance UUID, current feed cursor position, and a table of recent channel orders with status badges and timestamps. Auto-refreshes every 10 seconds. | ✅ |
+
+---
+
+### 🛡️ Outbox Pattern & Resilience Architecture
+When transient network issues (such as timeouts, HTTP 503 unavailable, or HTTP 429 rate limits) occur:
+1. `TianggeClient` attempts immediate retries with exponential backoff (e.g. 500ms, 1000ms, 2000ms).
+2. If the external API responds with a `Retry-After` header, the client honors the server's requested delay.
+3. If retries are exhausted, the request is not lost. A task is persisted to `channel_outbox` (`DECISION`, `RESOLUTION`, `CANCELLATION`, or `STOCK`).
+4. `ChannelOutboxScheduler` periodically queries uncompleted tasks with backoff and replays them until acknowledged.
+
+---
+
+### 🖥️ React UI: Channel Status Page
+The operations UI includes a dedicated **Channel Status** view (`frontend/src/components/ChannelStatus.tsx`):
+- **Live Connectivity Badge**: Real-time heartbeat indicator showing whether the instance is communicating with Tiangge.
+- **Instance UUID**: Monospace display of the running JVM instance identifier.
+- **Feed Cursor Telemetry**: Current durable database cursor position.
+- **Recent Orders Table**: Displays Tiangge Order ID, Internal Shop Order ID, Decision Badge (`ACCEPTED`, `BACKORDERED`, `REJECTED`, `CANCELLED`), and ISO timestamp.
+- **Auto-Refresh**: Polls `GET /api/channel/status` every 10 seconds without any manual action or trigger buttons.
+

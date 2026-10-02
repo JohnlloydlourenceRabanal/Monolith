@@ -5,9 +5,10 @@ import {
   OrderRecord,
   NotificationRecord,
   SupplierOrderSummary,
+  ChannelStatus,
 } from '../types';
 
-const API_BASE = 'http://localhost:8080/api';
+const API_BASE = '/api';
 
 export const api = {
   async getInventory(): Promise<InventoryItem[]> {
@@ -126,5 +127,13 @@ export const api = {
     } catch {
       return false;
     }
+  },
+
+  async getChannelStatus(): Promise<ChannelStatus> {
+    const res = await fetch(`${API_BASE}/channel/status`);
+    if (!res.ok) {
+      throw new Error(`Failed to load channel status: ${res.status}`);
+    }
+    return res.json();
   },
 };

@@ -5,7 +5,7 @@ spring:
   application:
     name: monolith-shop-inventory
   datasource:
-    url: ${SUPABASE_DB_URL:jdbc:h2:mem:monolithdb;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1}
+    url: ${SUPABASE_DB_URL:jdbc:h2:file:./data/monolithdb;AUTO_SERVER=TRUE;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1}
     username: ${SUPABASE_DB_USER:sa}
     password: ${SUPABASE_DB_PASSWORD:}
     driver-class-name: ${SPRING_DATASOURCE_DRIVER_CLASS_NAME:org.h2.Driver}
@@ -24,8 +24,15 @@ spring:
 supplier:
   base-url: ${LS_BASE_URL:https://legacysupply.onrender.com/api/v1}
   client-id: ${LS_CLIENT_ID:21-0328-885}
-  api-key: ${LS_API_KEY:}
+  api-key: ${LEGACY_API_KEY:${LS_API_KEY:LSK-E4E50A4A0BE7347C617F}}
   timeout-seconds: 3
+  max-retries: 3
+
+tiangge:
+  base-url: ${TIANGGE_BASE_URL:https://legacysupply.onrender.com/tiangge/v1}
+  client-id: ${TIANGGE_CLIENT_ID:21-0328-885}
+  api-key: ${LEGACY_API_KEY:${LS_API_KEY:LSK-E4E50A4A0BE7347C617F}}
+  timeout-seconds: 5
   max-retries: 3
 
 ---

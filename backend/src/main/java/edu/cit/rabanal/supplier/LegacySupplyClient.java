@@ -125,6 +125,7 @@ class LegacySupplyClient {
 
         for (int attempt = 1; attempt <= 2; attempt++) {
             try {
+                String token = sessionManager.getSessionToken();
                 String bodyXml = restClient.get()
                         .uri("/purchase-orders/{poNumber}", poNumber)
                         .header("X-LS-Session", token)

@@ -45,8 +45,12 @@ class SessionManager {
                 .requestFactory(factory)
                 .build();
 
-        // Priority: Injected property > Environment Variable
-        String initialKey = (apiKey != null && !apiKey.isBlank()) ? apiKey : System.getenv("LS_API_KEY");
+        // Priority: Injected property > LEGACY_API_KEY > LS_API_KEY
+        String envKey = System.getenv("LEGACY_API_KEY");
+        if (envKey == null || envKey.isBlank()) {
+            envKey = System.getenv("LS_API_KEY");
+        }
+        String initialKey = (apiKey != null && !apiKey.isBlank()) ? apiKey : envKey;
         if (initialKey != null && !initialKey.isBlank()) {
             this.apiKeyRef.set(initialKey.trim());
         }

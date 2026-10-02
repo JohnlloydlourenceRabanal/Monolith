@@ -68,3 +68,27 @@ export interface SupplierOrderSummary {
   updatedAt: string;
 }
 
+export interface ChannelOrderItem {
+  tianggeOrderId: string;
+  shopOrderId: number;
+  status: 'ACCEPTED' | 'BACKORDERED' | 'REJECTED' | 'CANCELLED' | string;
+  time: string;
+}
+
+export interface ChannelStatus {
+  instanceId: string;
+  online: boolean;
+  channelState: 'running' | 'paused' | 'backoff' | string;
+  lastHeartbeatTime: string | null;
+  lastCursor: number | null;
+  lastProcessedTime: string | null;
+  totalOrdersReceived: number;
+  totalAccepted: number;
+  totalRejected: number;
+  totalBackordered: number;
+  totalCancelled: number;
+  totalSupplierOrders: number;
+  totalDeliveries: number;
+  recentOrders: ChannelOrderItem[];
+}
+

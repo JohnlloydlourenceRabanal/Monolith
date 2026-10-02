@@ -139,4 +139,70 @@ public class BoundaryTest {
 
         rule.check(importedClasses);
     }
+
+    @Test
+    @DisplayName("Order and Inventory modules must NOT depend on or mention Channel/Tiangge")
+    void shopAndInventoryMustNotDependOnChannel() {
+        JavaClasses importedClasses = new ClassFileImporter().importPackages("edu.cit.rabanal");
+
+        ArchRule rule = noClasses()
+                .that().resideInAnyPackage("edu.cit.rabanal.shop..", "edu.cit.rabanal.inventory..")
+                .should().dependOnClassesThat()
+                .resideInAPackage("edu.cit.rabanal.channel..");
+
+        rule.check(importedClasses);
+    }
+
+    @Test
+    @DisplayName("Channel internal classes (HTTP client, DTOs, schedulers, interceptor, translators, runner) MUST be package-private")
+    void channelInternalClassesMustBePackagePrivate() throws Exception {
+        String[] pkgPrivateClassNames = {
+                "edu.cit.rabanal.channel.ChannelGatewayImpl",
+                "edu.cit.rabanal.channel.TianggeClient",
+                "edu.cit.rabanal.channel.ChannelTranslator",
+                "edu.cit.rabanal.channel.ClientInstanceInterceptor",
+                "edu.cit.rabanal.channel.ChannelHeartbeatScheduler",
+                "edu.cit.rabanal.channel.ChannelStartupRunner",
+                "edu.cit.rabanal.channel.InventoryStockEventListener",
+                "edu.cit.rabanal.channel.HeartbeatRequest",
+                "edu.cit.rabanal.channel.HeartbeatResponse",
+                "edu.cit.rabanal.channel.ListingDto",
+                "edu.cit.rabanal.channel.StockItemDto",
+                "edu.cit.rabanal.channel.ChannelOrder",
+                "edu.cit.rabanal.channel.ChannelOrderRepository",
+                "edu.cit.rabanal.channel.ChannelFeedCursor",
+                "edu.cit.rabanal.channel.ChannelFeedCursorRepository",
+                "edu.cit.rabanal.channel.FeedResponse",
+                "edu.cit.rabanal.channel.FeedEventDto",
+                "edu.cit.rabanal.channel.FeedOrderLineDto",
+                "edu.cit.rabanal.channel.FeedBuyerDto",
+                "edu.cit.rabanal.channel.OrderDecisionRequest",
+                "edu.cit.rabanal.channel.OrderCancellationConfirmation",
+                "edu.cit.rabanal.channel.OrderResolutionRequest",
+                "edu.cit.rabanal.channel.ChannelFeedPollerScheduler",
+                "edu.cit.rabanal.channel.ChannelOutboxTask",
+                "edu.cit.rabanal.channel.ChannelOutboxRepository",
+                "edu.cit.rabanal.channel.ChannelOutboxScheduler",
+                "edu.cit.rabanal.channel.ChannelOrderItemDto",
+                "edu.cit.rabanal.channel.ChannelStatusDto",
+                "edu.cit.rabanal.channel.ChannelController",
+                "edu.cit.rabanal.channel.ChannelDeliveryEventListener"
+        };
+
+        for (String className : pkgPrivateClassNames) {
+            Class<?> clazz = Class.forName(className);
+            int modifiers = clazz.getModifiers();
+            assertThat(Modifier.isPublic(modifiers))
+                    .as("%s must NOT have the 'public' modifier", className)
+                    .isFalse();
+        }
+    }
+
+    @Test
+    @DisplayName("ChannelGateway is the only public interface in channel")
+    void channelGatewayMustBePublicInterface() throws Exception {
+        Class<?> iface = Class.forName("edu.cit.rabanal.channel.ChannelGateway");
+        assertThat(iface.isInterface()).isTrue();
+        assertThat(Modifier.isPublic(iface.getModifiers())).isTrue();
+    }
 }
